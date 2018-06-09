@@ -92,7 +92,6 @@ class ReschedulableSchedulerTest {
                 Schedule.withRate(DynamicProperty.of(50)),
                 0,
                 Runnable {
-                    println("run")
                     latch.countDown()
                     throw RuntimeException("unexpected exception")
                 })

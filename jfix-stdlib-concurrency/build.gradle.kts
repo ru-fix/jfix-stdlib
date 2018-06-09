@@ -15,6 +15,8 @@ dependencies {
     testCompile(Libs.kotlin_stdlib)
     testCompile(Libs.kotlin_reflect)
 
+    testCompile(Libs.hamkrest)
+
     testImplementation(Libs.junit_api)
     testRuntimeOnly(Libs.junit_engine)
 
