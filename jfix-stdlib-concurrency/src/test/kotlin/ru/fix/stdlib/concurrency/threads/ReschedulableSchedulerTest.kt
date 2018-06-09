@@ -26,7 +26,7 @@ class ReschedulableSchedulerTest {
         val latch = CountDownLatch(3)
 
         scheduler.schedule(
-                Schedule.withRate(DynamicProperty.of(50)),
+                DynamicProperty.of(Schedule.withRate(50)),
                 0,
                 Runnable {
                     latch.countDown()

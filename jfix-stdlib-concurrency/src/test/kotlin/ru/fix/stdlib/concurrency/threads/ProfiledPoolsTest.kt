@@ -5,13 +5,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.fix.commons.profiler.impl.SimpleProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.ForkJoinPool
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.LongAdder
 import com.natpryce.hamkrest.assertion.*
 import com.natpryce.hamkrest.*
+import ru.fix.commons.profiler.NoopProfiler
+import java.util.concurrent.*
 
 class ProfiledPoolsTest {
 
@@ -78,7 +76,7 @@ class ProfiledPoolsTest {
         val taskStartedLatch = CountDownLatch(1)
         val unleashLatch = CountDownLatch(1)
 
-        CompletableFuture.runAsync {
+        ForkJoinPool.commonPool().execute {
 
             Exception("I am running in the thread: ${Thread.currentThread().name} == ${Thread.currentThread().id}\n")
                     .printStackTrace()

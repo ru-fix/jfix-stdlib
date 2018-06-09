@@ -2,6 +2,7 @@ package ru.fix.stdlib.concurrency.threads;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.fix.dynamic.property.api.DynamicProperty;
 
 import java.util.concurrent.*;
 import java.util.function.Supplier;
@@ -27,7 +28,7 @@ public class ReschedulableScheduler {
      *
      * @return result task from executionService
      */
-    public ScheduledFuture<?> schedule(Supplier<Schedule> scheduleSupplier,
+    public ScheduledFuture<?> schedule(DynamicProperty<Schedule> scheduleSupplier,
                                        long startDelay,
                                        Runnable task) {
 
@@ -66,7 +67,7 @@ public class ReschedulableScheduler {
     private static class SelfSchedulableTaskWrapper implements Runnable {
 
         private Schedule previousSchedule;
-        private Supplier<Schedule> scheduleSupplier;
+        private DynamicProperty<Schedule> scheduleSupplier;
 
         private ScheduledFuture<?> scheduledFuture;
 
@@ -79,7 +80,7 @@ public class ReschedulableScheduler {
         private volatile ScheduleSettings settings;
         private volatile long lastExecutedTs = 0;
 
-        public SelfSchedulableTaskWrapper(Supplier<Schedule> scheduleSupplier,
+        public SelfSchedulableTaskWrapper(DynamicProperty<Schedule> scheduleSupplier,
                                           Runnable task, ScheduledExecutorService executorService) {
             this.scheduleSupplier = scheduleSupplier;
             this.task = task;
