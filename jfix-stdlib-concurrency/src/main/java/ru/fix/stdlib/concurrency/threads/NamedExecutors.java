@@ -84,7 +84,7 @@ public class NamedExecutors {
         profiler.attachIndicator("pool.commonPool.runningThread",
                 () -> (long) ForkJoinPool.commonPool().getRunningThreadCount());
 
-        profiler.attachIndicator("pool.commonPool.queuedSubmission",
+        profiler.attachIndicator("pool.commonPool.queue",
                 () -> (long) ForkJoinPool.commonPool().getQueuedSubmissionCount());
 
         profiler.attachIndicator("pool.commonPool.steal",

@@ -7,7 +7,7 @@ object Vers {
     val hamkrest = "1.4.2.2"
 
     val aggregatingProfiler = "1.2.20"
-    val dynamicProperty = "1.0.4"
+    val dynamicProperty = "1.0.5"
 }
 
 object Libs {

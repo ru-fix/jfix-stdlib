@@ -15,7 +15,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
-import java.util.function.Supplier
 
 class ReschedulableSchedulerTest {
 
@@ -115,14 +114,13 @@ class ReschedulableSchedulerTest {
     fun `dealy dynamically changes over time UNSTABLE`() {
         val scheduler = NamedExecutors.newSingleThreadScheduler("", SimpleProfiler())
 
-        val scheduleSupplier = object : Supplier<Schedule> {
-            private var counter: Int = 0
+        val scheduleCounter = AtomicInteger()
 
-            override fun get(): Schedule =
-                    when (counter++) {
-                        0, 1 -> Schedule.withDelay(10)
-                        else -> Schedule.withDelay(1500)
-                    }
+        val scheduleSupplier = {
+            when (scheduleCounter.getAndIncrement()) {
+                0, 1 -> Schedule.withDelay(10)
+                else -> Schedule.withDelay(1500)
+            }
         }
 
         val prevRunTimestamp = AtomicReference(Instant.now())
@@ -134,7 +132,7 @@ class ReschedulableSchedulerTest {
         val secondDelay = AtomicLong()
 
 
-        scheduler.schedule(scheduleSupplier, 0, Runnable {
+        scheduler.schedule(scheduleSupplier, 0) {
             val currentRunNum = counter.getAndIncrement()
 
             if (currentRunNum == 0) {
@@ -155,7 +153,7 @@ class ReschedulableSchedulerTest {
                 prevRunTimestamp.set(Instant.now())
                 countJobsLatch.countDown()
             }
-        })
+        }
 
         assertTrue(countJobsLatch.await(20, SECONDS))
         scheduler.shutdown()
