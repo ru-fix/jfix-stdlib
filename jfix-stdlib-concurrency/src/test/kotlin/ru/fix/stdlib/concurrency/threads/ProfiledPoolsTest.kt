@@ -75,15 +75,17 @@ class ProfiledPoolsTest {
 
         val reporter = profiler.createReporter()
 
-        val taskCompleted = LongAdder()
-
         val taskStartedLatch = CountDownLatch(1)
         val unleashLatch = CountDownLatch(1)
 
         CompletableFuture.runAsync {
+
+            Exception("I am running in the thread: ${Thread.currentThread().name} == ${Thread.currentThread().id}\n")
+                    .printStackTrace()
+
+
             taskStartedLatch.countDown()
             unleashLatch.await()
-            taskCompleted.increment()
         }
 
         taskStartedLatch.await()
@@ -98,7 +100,6 @@ class ProfiledPoolsTest {
 
         assertTrue { ForkJoinPool.commonPool().awaitQuiescence(10, TimeUnit.SECONDS) }
 
-        assertEquals(1, taskCompleted.sum())
     }
 
     @Test()
