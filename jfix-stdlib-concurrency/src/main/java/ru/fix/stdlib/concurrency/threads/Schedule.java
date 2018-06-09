@@ -21,9 +21,17 @@ public class Schedule {
     private final Type type;
     private final long value;
 
-    private Schedule(Type type, long value) {
+    public Schedule(Type type, long value) {
         this.type = type;
         this.value = value;
+    }
+
+    public Type getType() {
+        return type;
+    }
+
+    public long getValue() {
+        return value;
     }
 
     /**
@@ -52,13 +60,5 @@ public class Schedule {
 
     public static Supplier<Schedule> withDelay(DynamicProperty<? extends Number> delay) {
         return () -> new Schedule(Type.DELAY, delay.get().longValue());
-    }
-
-    public Type getType() {
-        return type;
-    }
-
-    public long getValue() {
-        return value;
     }
 }

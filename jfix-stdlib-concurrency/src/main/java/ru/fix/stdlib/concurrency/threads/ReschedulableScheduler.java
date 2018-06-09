@@ -22,7 +22,6 @@ public class ReschedulableScheduler {
         this.executorService = executorService;
     }
 
-
     /**
      * change execution by schedule type
      *
@@ -56,9 +55,9 @@ public class ReschedulableScheduler {
     }
 
     /**
-     * awaitTermination scheduler's executorService
-     * <p>
-     * shorter version of {@code getExecutorService().awaitTermination()}
+     * Blocks until all tasks have completed execution after a shutdown
+     * request, or the timeout occurs, or the current thread is
+     * interrupted, whichever happens first.
      */
     public boolean awaitTermination(long timeout, TimeUnit timeUnit) throws InterruptedException {
         return executorService.awaitTermination(timeout, timeUnit);
@@ -78,7 +77,7 @@ public class ReschedulableScheduler {
         private final ScheduledExecutorService executorService;
 
         private volatile ScheduleSettings settings;
-        private volatile long lastExecutedTs = Long.MIN_VALUE;
+        private volatile long lastExecutedTs = 0;
 
         public SelfSchedulableTaskWrapper(Supplier<Schedule> scheduleSupplier,
                                           Runnable task, ScheduledExecutorService executorService) {
@@ -92,9 +91,12 @@ public class ReschedulableScheduler {
         public void run() {
             ScheduleSettings currSettings = this.settings;
             if (currSettings.type == Schedule.Type.RATE) {
+                //If fixed rate tasks take more time that given rate
+                //then next invocation of task starts to happen immediately
+                //and total invocation rate will exceed rate limit
+                //skip such invocations
                 long now = System.currentTimeMillis();
                 if (now < lastExecutedTs + currSettings.periodValue - currSettings.safeDelay()) {
-                    log.trace("the previous task was executed not so long ago, skipping current");
                     return;
                 }
                 lastExecutedTs = now;
@@ -102,11 +104,10 @@ public class ReschedulableScheduler {
 
             try {
                 task.run();
-            } catch (Exception exc) {
-                log.error("ReschedulableScheduler task failed.", exc);
-            } catch (Throwable er) {
-                log.error("Very critical error. ReschedulableScheduler task failed.", er);
-                throw er;
+
+            } catch (Throwable exc) {
+                log.error("ReschedulableScheduler task failed due to: " + exc.getMessage(), exc);
+
             } finally {
                 checkPreviousScheduleAndRestartTask();
             }
