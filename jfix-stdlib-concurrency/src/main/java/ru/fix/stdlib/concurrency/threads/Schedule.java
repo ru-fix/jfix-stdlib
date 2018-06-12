@@ -44,8 +44,8 @@ public class Schedule {
     }
 
 
-    public static Supplier<Schedule> withRate(DynamicProperty<? extends Number> rate) {
-        return () -> new Schedule(Type.RATE, rate.get().longValue());
+    public static DynamicProperty<Schedule> withRate(DynamicProperty<? extends Number> rate) {
+        return rate.map(newValue -> new Schedule(Type.RATE, newValue.longValue()));
     }
 
 
@@ -58,7 +58,7 @@ public class Schedule {
         return new Schedule(Type.DELAY, delay);
     }
 
-    public static Supplier<Schedule> withDelay(DynamicProperty<? extends Number> delay) {
-        return () -> new Schedule(Type.DELAY, delay.get().longValue());
+    public static DynamicProperty<Schedule> withDelay(DynamicProperty<? extends Number> delay) {
+        return delay.map(newValue -> new Schedule(Type.DELAY, newValue.longValue()));
     }
 }

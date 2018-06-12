@@ -1,11 +1,14 @@
 package ru.fix.stdlib.concurrency.threads
 
+import com.natpryce.hamkrest.assertion.assert
+import com.natpryce.hamkrest.assertion.assertThat
+import com.natpryce.hamkrest.equalTo
+import com.natpryce.hamkrest.greaterThanOrEqualTo
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.fix.commons.profiler.impl.SimpleProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.TimeUnit
@@ -52,14 +55,14 @@ class ProfiledPoolsTest {
 
         assertTrue { pool.awaitTermination(10, TimeUnit.SECONDS) }
 
-        assertEquals(100, taskCompleted.sum())
+        assert.that(100, equalTo(taskCompleted.sum()))
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertEquals(100L, it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCount)
-            assertEquals(0L, it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCount)
-            assertEquals(98L, it.profilerCallReports.find { it.name == "pool.test.await" }?.callsCount)
-            assertEquals(0L, it.profilerCallReports.find { it.name == "pool.test.await" }?.activeCallsCount)
+            assertThat(100L, equalTo(it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCount))
+            assertThat(0L, equalTo(it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCount))
+            assertThat(98L, equalTo(it.profilerCallReports.find { it.name == "pool.test.await" }?.callsCount))
+            assertThat(0L, equalTo(it.profilerCallReports.find { it.name == "pool.test.await" }?.activeCallsCount))
         }
 
     }
@@ -73,22 +76,24 @@ class ProfiledPoolsTest {
 
         val reporter = profiler.createReporter()
 
-        val taskCompleted = LongAdder()
-
         val taskStartedLatch = CountDownLatch(1)
         val unleashLatch = CountDownLatch(1)
 
-        CompletableFuture.runAsync {
+        ForkJoinPool.commonPool().execute {
+
+            Exception("I am running in the thread: ${Thread.currentThread().name} == ${Thread.currentThread().id}\n")
+                    .printStackTrace()
+
+
             taskStartedLatch.countDown()
             unleashLatch.await()
-            taskCompleted.increment()
         }
 
         taskStartedLatch.await()
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertTrue { it.indicators["pool.commonPool.activeThread"]!! >= 1 }
+            assertThat(it.indicators["pool.commonPool.activeThread"]!!, greaterThanOrEqualTo(1L))
         }
 
         unleashLatch.countDown()
@@ -96,7 +101,6 @@ class ProfiledPoolsTest {
 
         assertTrue { ForkJoinPool.commonPool().awaitQuiescence(10, TimeUnit.SECONDS) }
 
-        assertEquals(1, taskCompleted.sum())
     }
 
     @Test()

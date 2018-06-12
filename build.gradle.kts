@@ -54,11 +54,6 @@ val signingKeyId by envConfig()
 val signingPassword by envConfig()
 val signingSecretKeyRingFile by envConfig()
 
-repositories {
-    jcenter()
-    gradlePluginPortal()
-    mavenCentral()
-}
 
 plugins {
     kotlin("jvm") version "${Vers.kotlin}" apply false
@@ -79,8 +74,9 @@ subprojects {
     }
 
     repositories {
-        mavenCentral()
         jcenter()
+        mavenCentral()
+        mavenLocal()
     }
 
 
@@ -191,6 +187,8 @@ subprojects {
 
             testLogging {
                 events(TestLogEvent.PASSED, TestLogEvent.FAILED, TestLogEvent.SKIPPED)
+                showStandardStreams = true
+                exceptionFormat = TestExceptionFormat.FULL
             }
         }
     }

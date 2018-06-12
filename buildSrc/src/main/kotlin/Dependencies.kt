@@ -4,9 +4,10 @@ object Vers {
     val dokkav = "0.9.16"
     val gradleReleasePlugin = "1.2.18"
     val junit = "5.2.0"
+    val hamkrest = "1.4.2.2"
 
     val aggregatingProfiler = "1.2.20"
-    val dynamicProperty = "1.0.4"
+    val dynamicProperty = "1.0.5"
 }
 
 object Libs {
@@ -15,7 +16,7 @@ object Libs {
     val kotlin_reflect = "org.jetbrains.kotlin:kotlin-reflect:${Vers.kotlin}"
 
     val gradleReleasePlugin = "ru.fix:gradle-release-plugin:${Vers.gradleReleasePlugin}"
-    val dokkaGradlePlugin =  "org.jetbrains.dokka:dokka-gradle-plugin:${Vers.dokkav}"
+    val dokkaGradlePlugin = "org.jetbrains.dokka:dokka-gradle-plugin:${Vers.dokkav}"
 
     val slf4j_api = "org.slf4j:slf4j-api:${Vers.sl4j}"
     val slf4j_simple = "org.slf4j:slf4j-simple:${Vers.sl4j}"
@@ -27,6 +28,8 @@ object Libs {
     val junit_api = "org.junit.jupiter:junit-jupiter-api:${Vers.junit}"
     val junit_parametri = "org.junit.jupiter:junit-jupiter-params:${Vers.junit}"
     val junit_engine = "org.junit.jupiter:junit-jupiter-engine:${Vers.junit}"
+    val hamkrest = "com.natpryce:hamkrest:${Vers.hamkrest}"
+
 
     val aggregatingProfiler = "ru.fix:commons-profiler-api:${Vers.aggregatingProfiler}"
     val dynamicProperty = "ru.fix:dynamic-property-api:${Vers.dynamicProperty}"
