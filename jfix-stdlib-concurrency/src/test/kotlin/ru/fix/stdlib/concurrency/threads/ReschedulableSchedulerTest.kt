@@ -103,15 +103,15 @@ class ReschedulableSchedulerTest {
     }
 
 
+    /**
+     * Asserts dynamic delay change
+     * Could be unstable.
+     * Stable test for shceduller is hard to design
+     * due to unpredictable nature of OS scheduler and current load of machine where test is executed.
+     * Normal stable test is required.
+     */
     @Test
-    @Disabled("""
-         Unstable test that asserts dynamic delay change
-         Stable test for shceduller is hard to design
-         Due to unpredictable nature of OS scheduler and current load of machine where test is executed.
-         Normal stable test is required.
-         Run this test manually.
-         """)
-    fun `dealy dynamically changes over time UNSTABLE`() {
+    fun `dealy dynamically changes over time`() {
         val scheduler = NamedExecutors.newSingleThreadScheduler("", SimpleProfiler())
 
         val scheduleCounter = AtomicInteger()
