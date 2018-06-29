@@ -6,7 +6,7 @@ object Vers {
     val junit = "5.2.0"
     val hamkrest = "1.4.2.2"
 
-    val aggregatingProfiler = "1.2.20"
+    val aggregatingProfiler = "1.3.3"
     val dynamicProperty = "1.0.5"
 }
 

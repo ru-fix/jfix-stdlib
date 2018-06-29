@@ -44,8 +44,8 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertEquals(98L, it.indicators["pool.test.queue"])
-            assertEquals(2L, it.indicators["pool.test.activeThreads"])
+            assertEquals(98L, it.indicators["pool.test.queue.indicatorMax"])
+            assertEquals(2L, it.indicators["pool.test.activeThreads.indicatorMax"])
         }
 
         //release tasks
@@ -59,10 +59,10 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertThat(100L, equalTo(it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCount))
-            assertThat(0L, equalTo(it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCount))
-            assertThat(98L, equalTo(it.profilerCallReports.find { it.name == "pool.test.await" }?.callsCount))
-            assertThat(0L, equalTo(it.profilerCallReports.find { it.name == "pool.test.await" }?.activeCallsCount))
+            assertThat(100L, equalTo(it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCountSum))
+            assertThat(0L, equalTo(it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCountMax))
+            assertThat(98L, equalTo(it.profilerCallReports.find { it.name == "pool.test.await" }?.callsCountSum))
+            assertThat(0L, equalTo(it.profilerCallReports.find { it.name == "pool.test.await" }?.activeCallsCountMax))
         }
 
     }
@@ -93,7 +93,7 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertThat(it.indicators["pool.commonPool.activeThread"]!!, greaterThanOrEqualTo(1L))
+            assertThat(it.indicators["pool.commonPool.activeThread.indicatorMax"]!!, greaterThanOrEqualTo(1L))
         }
 
         unleashLatch.countDown()
@@ -125,8 +125,8 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertEquals(0L, it.indicators["pool.test.queue"])
-            assertEquals(1L, it.indicators["pool.test.activeThreads"])
+            assertEquals(0L, it.indicators["pool.test.queue.indicatorMax"])
+            assertEquals(1L, it.indicators["pool.test.activeThreads.indicatorMax"])
         }
 
         unleashLatch.countDown()
@@ -137,8 +137,8 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertEquals(1L, it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCount)
-            assertEquals(0L, it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCount)
+            assertEquals(1L, it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCountSum)
+            assertEquals(0L, it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCountMax)
         }
 
         assertEquals(1, taskCompleted.sum())
@@ -171,8 +171,8 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertEquals(1L, it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCount)
-            assertEquals(0L, it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCount)
+            assertEquals(1L, it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCountSum)
+            assertEquals(0L, it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCountMax)
         }
 
         assertEquals(1, taskCompleted.sum())
@@ -210,8 +210,8 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertEquals(100L, it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCount)
-            assertEquals(0L, it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCount)
+            assertEquals(100L, it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCountSum)
+            assertEquals(0L, it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCountMax)
         }
 
         assertEquals(100L, taskCompleted.sum())
