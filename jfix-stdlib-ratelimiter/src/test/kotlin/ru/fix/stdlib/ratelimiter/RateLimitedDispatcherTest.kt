@@ -1,14 +1,14 @@
 package ru.fix.stdlib.ratelimiter
 
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
 import ru.fix.commons.profiler.NoopProfiler
 import ru.fix.commons.profiler.ProfiledCall
 import ru.fix.commons.profiler.impl.SimpleProfiler
+import java.time.Duration
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicInteger
@@ -32,12 +32,85 @@ class RateLimitedDispatcherTest {
 
     @Test
     fun testSubmitIncrementThroughput() {
-        testThroughput(BiFunction { call, counter -> this.submitIncrement(call, counter) })
+        assertTimeoutPreemptively(Duration.ofSeconds(15), {
+            testThroughput(BiFunction { call, counter -> this.submitIncrement(call, counter) })
+        })
     }
 
     @Test
     fun testComposeIncrementThroughput() {
-        testThroughput(BiFunction { call, counter -> this.composeIncrement(call, counter) })
+        assertTimeoutPreemptively(Duration.ofSeconds(15), {
+            testThroughput(BiFunction { call, counter -> this.composeIncrement(call, counter) })
+        })
+    }
+
+    @Test
+    fun gracefulShutdown_submittedTasksAreCompletedNormally() {
+        assertTimeoutPreemptively(Duration.ofSeconds(5), {
+            dontProcessNewTasksInDispatcherUntilCloseIsCalled()
+
+            val futures = ArrayList<CompletableFuture<*>>()
+            for (i in 1..3) {
+                futures.add(dispatcher.submit({ }))
+            }
+
+            dispatcher.close(true)
+
+            futures.forEach({ future: CompletableFuture<*> ->
+                assertTrue(future.isDone)
+                assertFalse(future.isCompletedExceptionally)
+            })
+        })
+    }
+
+    @Test
+    fun gracefulShutdown_cantAcquireLimitInTimeout_submittedTasksAreCompletedExceptionally() {
+        assertTimeoutPreemptively(Duration.ofSeconds(5), {
+            val limiter = ConfigurableRateLimiter("test-rate-limiter", 1)
+            dispatcher = RateLimitedDispatcher("test-rate-limiter-dispatcher", limiter, NoopProfiler(), 100)
+
+            dontProcessNewTasksInDispatcherUntilCloseIsCalled()
+
+            val futures = ArrayList<CompletableFuture<*>>()
+            for (i in 1..3) {
+                futures.add(dispatcher.submit({ }))
+            }
+
+            dispatcher.close(true)
+
+            futures.forEach({ future: CompletableFuture<*> ->
+                assertTrue(future.isDone)
+                assertTrue(future.isCompletedExceptionally)
+            })
+        })
+    }
+
+    @Test
+    fun ungracefulShutdown_submittedTasksAreCompletedExceptionally() {
+        assertTimeoutPreemptively(Duration.ofSeconds(5), {
+            dontProcessNewTasksInDispatcherUntilCloseIsCalled()
+
+            val futures = ArrayList<CompletableFuture<*>>()
+            for (i in 1..3) {
+                futures.add(dispatcher.submit({ }))
+            }
+
+            dispatcher.close(false)
+
+            futures.forEach({ future: CompletableFuture<*> ->
+                assertTrue(future.isDone)
+                assertTrue(future.isCompletedExceptionally)
+            })
+        })
+    }
+
+    private fun dontProcessNewTasksInDispatcherUntilCloseIsCalled() {
+        dispatcher.submit({
+            //will be interrupted by dispatcher on close
+            while (true) {
+                Thread.sleep(10)
+            }
+        })
     }
 
     private fun testThroughput(biFunction: BiFunction<ProfiledCall, AtomicInteger, CompletableFuture<Int>>) {
