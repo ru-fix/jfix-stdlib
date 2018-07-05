@@ -29,6 +29,7 @@ public class RateLimitedDispatcher {
     private final LinkedBlockingQueue<Task> queue = new LinkedBlockingQueue<>();
     private final Thread thread;
 
+    private final String name;
     private final Profiler profiler;
 
     /**
@@ -38,6 +39,7 @@ public class RateLimitedDispatcher {
      * @param rateLimiter rate limiter, which provides rate of operations
      */
     public RateLimitedDispatcher(String name, RateLimiter rateLimiter, Profiler profiler) {
+        this.name = name;
         this.rateLimiter = rateLimiter;
         this.profiler = new PrefixedProfiler(profiler, "RateLimiterDispatcher." + name + ".");
 
@@ -69,7 +71,7 @@ public class RateLimitedDispatcher {
         State state = this.state.get();
         if (state != State.RUNNING) {
             RejectedExecutionException ex = new RejectedExecutionException(
-                "RateLimiterDispatcher is in " + state + " state"
+                "RateLimiterDispatcher [" + name + "] is in [" + state + "] state"
             );
             result.completeExceptionally(ex);
             return result;
@@ -89,7 +91,7 @@ public class RateLimitedDispatcher {
     public void close(long timeoutMs) throws Exception {
         boolean stateUpdated = state.compareAndSet(State.RUNNING, State.SHUTTING_DOWN);
         if (!stateUpdated) {
-            logger.warn("close called on RateLimitedDispatcher with state {}", state.get());
+            logger.warn("Close called on RateLimitedDispatcher [{}] with state [{}]", name, state.get());
             return;
         }
 
@@ -100,7 +102,10 @@ public class RateLimitedDispatcher {
 
         stateUpdated = state.compareAndSet(State.SHUTTING_DOWN, State.TERMINATE);
         if (!stateUpdated) {
-            logger.error("Can't set TERMINATE state to RateLimitedDispatcher in {} state", state.get());
+            logger.error(
+                "Can't set [TERMINATE] state to RateLimitedDispatcher [{}] in [{}] state",
+                name, state.get()
+            );
             return;
         }
         thread.join();
@@ -126,7 +131,7 @@ public class RateLimitedDispatcher {
 
             queue.forEach(task -> {
                 task.getFuture().completeExceptionally(new RejectedExecutionException(
-                    "RateLimitedDispatcher is in TERMINATE state"
+                    "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state"
                 ));
                 task.getQueueWaitTime().close();
             });
@@ -154,7 +159,7 @@ public class RateLimitedDispatcher {
                     }
                     if (!acquired) {
                         future.completeExceptionally(new RejectedExecutionException(
-                            "RateLimitedDispatcher is in TERMINATE state"
+                            "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state"
                         ));
                         return;
                     }
