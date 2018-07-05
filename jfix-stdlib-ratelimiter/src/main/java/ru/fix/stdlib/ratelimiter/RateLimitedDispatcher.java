@@ -1,6 +1,5 @@
 package ru.fix.stdlib.ratelimiter;
 
-import javafx.scene.paint.Stop;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.fix.commons.profiler.PrefixedProfiler;
@@ -8,28 +7,27 @@ import ru.fix.commons.profiler.ProfiledCall;
 import ru.fix.commons.profiler.Profiler;
 
 import java.lang.invoke.MethodHandles;
-import java.time.Duration;
 import java.time.temporal.ChronoUnit;
-import java.util.Optional;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 /**
  * Dispatcher class which manages tasks execution with given rate. Queues and
  * executes all task in single processor thread.
  */
-public class RateLimitedDispatcher implements AutoCloseable {
+public class RateLimitedDispatcher {
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
     private static final String QUEUE_SIZE_INDICATOR = "queue_size";
 
-    private final AtomicBoolean isAlive = new AtomicBoolean(true);
+    private final AtomicReference<State> state = new AtomicReference<>();
 
     private final RateLimiter rateLimiter;
     private final LinkedBlockingQueue<Task> queue = new LinkedBlockingQueue<>();
     private final Thread thread;
-    private final long limitAcquireTimeoutMillis;
 
     private final Profiler profiler;
 
@@ -40,27 +38,12 @@ public class RateLimitedDispatcher implements AutoCloseable {
      * @param rateLimiter rate limiter, which provides rate of operations
      */
     public RateLimitedDispatcher(String name, RateLimiter rateLimiter, Profiler profiler) {
-        this(name, rateLimiter, profiler, Duration.of(30, ChronoUnit.SECONDS).toMillis());
-    }
-
-    /**
-     * Creates new dispatcher instance
-     *
-     * @param name        name of dispatcher - will be used in metrics and worker's thread name
-     * @param rateLimiter rate limiter, which provides rate of operations
-     * @param limitAcquireTimeoutOnShutdownMillis prevents dispatcher from hanging on shutdown.
-     *                                            If dispatcher is in shutdown state and
-     *                                            can't acquire permit from RateLimiter in this timeout
-     *                                            it will complete exceptionally all remaining operations
-     */
-    public RateLimitedDispatcher(String name, RateLimiter rateLimiter, Profiler profiler,
-                                 long limitAcquireTimeoutOnShutdownMillis) {
         this.rateLimiter = rateLimiter;
-        this.limitAcquireTimeoutMillis = limitAcquireTimeoutOnShutdownMillis;
-
         this.profiler = new PrefixedProfiler(profiler, "RateLimiterDispatcher." + name + ".");
 
         thread = new Thread(new TaskProcessor(), "rate-limited-dispatcher-" + name);
+
+        state.set(State.RUNNING);
         thread.start();
 
         this.profiler.attachIndicator(QUEUE_SIZE_INDICATOR, () -> (long) queue.size());
@@ -83,9 +66,10 @@ public class RateLimitedDispatcher implements AutoCloseable {
     public <T> CompletableFuture<T> submit(Supplier<T> supplier) {
         CompletableFuture<T> result = new CompletableFuture<>();
 
-        if (!isAlive.get()) {
+        State state = this.state.get();
+        if (state != State.RUNNING) {
             RejectedExecutionException ex = new RejectedExecutionException(
-                "RateLimiterDispatcher is in shutdown state"
+                "RateLimiterDispatcher is in " + state + " state"
             );
             result.completeExceptionally(ex);
             return result;
@@ -102,27 +86,23 @@ public class RateLimitedDispatcher implements AutoCloseable {
         rateLimiter.updateRate(rate);
     }
 
-    @Override
-    public void close() throws Exception {
-        this.close(false);
-    }
-
-    public void close(boolean gracefully) throws Exception {
-        isAlive.compareAndSet(true, false);
-
-        if (!gracefully) {
-            Task task;
-            while ((task = queue.poll()) != null) {
-                CancellationException ex = new CancellationException(
-                    "Operation is cancelled because Dispatcher is shutting down." +
-                        " If you want to complete already submitted operations on timeout use graceful shutdown close."
-                );
-                task.getFuture().completeExceptionally(ex);
-                task.getQueueWaitTime().close();
-            }
+    public void close(long timeoutMs) throws Exception {
+        boolean stateUpdated = state.compareAndSet(State.RUNNING, State.SHUTTING_DOWN);
+        if (!stateUpdated) {
+            logger.warn("close called on RateLimitedDispatcher with state {}", state.get());
+            return;
         }
 
         thread.interrupt();
+        if (timeoutMs > 0) {
+            thread.join(timeoutMs);
+        }
+
+        stateUpdated = state.compareAndSet(State.SHUTTING_DOWN, State.TERMINATE);
+        if (!stateUpdated) {
+            logger.error("Can't set TERMINATE state to RateLimitedDispatcher in {} state", state.get());
+            return;
+        }
         thread.join();
 
         rateLimiter.close();
@@ -134,36 +114,31 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
         @Override
         public void run() {
-            try {
-                while (isAlive.get() || !queue.isEmpty()) {
-                    try {
-                        processingCycle();
-                    }
-                    catch (StopProcessingException e) {
-                        throw e;
-                    }
-                    catch (Exception e) {
-                        logger.error(e.getMessage(), e);
-                    }
+            while (state.get() == State.RUNNING ||
+                    state.get() == State.SHUTTING_DOWN && !queue.isEmpty()) {
+                try {
+                    processingCycle();
+                }
+                catch (Exception e) {
+                    logger.error(e.getMessage(), e);
                 }
             }
-            catch (StopProcessingException e) {
-                queue.forEach(task -> {
-                    task.getFuture().completeExceptionally(e);
-                    task.getQueueWaitTime().close();
-                });
-            }
+
+            queue.forEach(task -> {
+                task.getFuture().completeExceptionally(new RejectedExecutionException(
+                    "RateLimitedDispatcher is in TERMINATE state"
+                ));
+                task.getQueueWaitTime().close();
+            });
         }
 
-        private void processingCycle() throws StopProcessingException {
+        private void processingCycle() {
             Task task;
             try {
                 task = queue.take();
             }
             catch (InterruptedException e) {
-                if (isAlive.get()) {
-                    logger.error("RateLimitedDispatchers processor thread was interrupted", e);
-                }
+                Thread.currentThread().interrupt();
                 return;
             }
 
@@ -171,7 +146,20 @@ public class RateLimitedDispatcher implements AutoCloseable {
             CompletableFuture future = task.getFuture();
 
             try {
-                acquirePermit();
+                try (ProfiledCall limitAcquireTime = profiler.start("acquire_limit")) {
+
+                    boolean acquired = false;
+                    while (state.get() != State.TERMINATE && !acquired) {
+                        acquired = rateLimiter.tryAcquire(1, ChronoUnit.SECONDS);
+                    }
+                    if (!acquired) {
+                        future.completeExceptionally(new RejectedExecutionException(
+                            "RateLimitedDispatcher is in TERMINATE state"
+                        ));
+                        return;
+                    }
+                    limitAcquireTime.stop();
+                }
 
                 Object result = profiler.profile(
                     "supplied_operation",
@@ -179,35 +167,8 @@ public class RateLimitedDispatcher implements AutoCloseable {
                 );
                 future.complete(result);
             }
-            catch (StopProcessingException e) {
-                future.completeExceptionally(e);
-                throw e;
-            }
             catch (Exception e) {
                 future.completeExceptionally(e);
-            }
-        }
-
-        private void acquirePermit() throws StopProcessingException {
-            try (ProfiledCall limitAcquireTime = profiler.start("acquire_limit")) {
-
-                boolean acquired = rateLimiter.tryAcquire(limitAcquireTimeoutMillis, ChronoUnit.MILLIS);
-
-                while (isAlive.get() && !acquired) {
-                    acquired = rateLimiter.tryAcquire(limitAcquireTimeoutMillis, ChronoUnit.MILLIS);
-                }
-                if (!acquired) {
-                    logger.error(
-                        "RateLimitedDispatcher is in shutdown state and can't acquire permit" +
-                        " in " + limitAcquireTimeoutMillis + "ms." +
-                        " All remaining operations will be completed exceptionally"
-                    );
-                    throw new StopProcessingException(
-                        "RateLimitedDispatcher is in shutdown state and couldn't acquire permit" +
-                            " in " + limitAcquireTimeoutMillis + "ms."
-                    );
-                }
-                limitAcquireTime.stop();
             }
         }
     }
@@ -218,7 +179,6 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
         private final ProfiledCall queueWaitTime;
 
-        @SuppressWarnings("WeakerAccess")
         public Task(CompletableFuture<T> future, Supplier<T> supplier, ProfiledCall queueWaitTime) {
             this.future = future;
             this.supplier = supplier;
@@ -238,11 +198,9 @@ public class RateLimitedDispatcher implements AutoCloseable {
         }
     }
 
-    @SuppressWarnings("serial")
-    private static class StopProcessingException extends Exception {
-
-        public StopProcessingException(String message) {
-            super(message);
-        }
+    private enum State {
+        RUNNING,
+        SHUTTING_DOWN,
+        TERMINATE
     }
 }

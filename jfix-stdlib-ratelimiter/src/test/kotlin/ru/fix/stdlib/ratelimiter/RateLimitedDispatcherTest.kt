@@ -45,7 +45,7 @@ class RateLimitedDispatcherTest {
     }
 
     @Test
-    fun gracefulShutdown_submittedTasksAreCompletedNormally() {
+    fun shutdown_tasksCompletedInTimeout_areCompletedNormally() {
         assertTimeoutPreemptively(Duration.ofSeconds(5), {
             dontProcessNewTasksInDispatcherUntilCloseIsCalled()
 
@@ -54,7 +54,7 @@ class RateLimitedDispatcherTest {
                 futures.add(dispatcher.submit({ }))
             }
 
-            dispatcher.close(true)
+            dispatcher.close(1_000)
 
             futures.forEach({ future: CompletableFuture<*> ->
                 assertTrue(future.isDone)
@@ -64,38 +64,21 @@ class RateLimitedDispatcherTest {
     }
 
     @Test
-    fun gracefulShutdown_cantAcquireLimitInTimeout_submittedTasksAreCompletedExceptionally() {
+    fun shutdown_tasksNotCompletedInTimeout_areCompletedExceptionally() {
         assertTimeoutPreemptively(Duration.ofSeconds(5), {
-            val limiter = ConfigurableRateLimiter("test-rate-limiter", 1)
-            dispatcher = RateLimitedDispatcher("test-rate-limiter-dispatcher", limiter, NoopProfiler(), 100)
 
             dontProcessNewTasksInDispatcherUntilCloseIsCalled()
-
-            val futures = ArrayList<CompletableFuture<*>>()
-            for (i in 1..3) {
-                futures.add(dispatcher.submit({ }))
-            }
-
-            dispatcher.close(true)
-
-            futures.forEach({ future: CompletableFuture<*> ->
-                assertTrue(future.isDone)
-                assertTrue(future.isCompletedExceptionally)
+            // give dispatcher some time to switch to terminate state
+            dispatcher.submit({
+                Thread.sleep(10)
             })
-        })
-    }
-
-    @Test
-    fun ungracefulShutdown_submittedTasksAreCompletedExceptionally() {
-        assertTimeoutPreemptively(Duration.ofSeconds(5), {
-            dontProcessNewTasksInDispatcherUntilCloseIsCalled()
 
             val futures = ArrayList<CompletableFuture<*>>()
             for (i in 1..3) {
                 futures.add(dispatcher.submit({ }))
             }
 
-            dispatcher.close(false)
+            dispatcher.close(0)
 
             futures.forEach({ future: CompletableFuture<*> ->
                 assertTrue(future.isDone)
