@@ -27,7 +27,7 @@ class RateLimitedDispatcherTest {
 
     @AfterEach
     fun after() {
-        dispatcher.close()
+        dispatcher.close(0)
     }
 
     @Test
