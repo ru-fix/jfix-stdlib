@@ -6,6 +6,7 @@ object Vers {
     val junit = "5.2.0"
     val hamkrest = "1.4.2.2"
 
+    val resilience4j = "0.13.0"
     val aggregatingProfiler = "1.3.3"
     val dynamicProperty = "1.0.5"
 }
@@ -31,6 +32,7 @@ object Libs {
     val hamkrest = "com.natpryce:hamkrest:${Vers.hamkrest}"
 
 
+    val resilience4jRatelimiter = "io.github.resilience4j:resilience4j-ratelimiter:${Vers.resilience4j}"
     val aggregatingProfiler = "ru.fix:commons-profiler-api:${Vers.aggregatingProfiler}"
     val dynamicProperty = "ru.fix:dynamic-property-api:${Vers.dynamicProperty}"
 

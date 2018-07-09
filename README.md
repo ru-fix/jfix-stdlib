@@ -2,11 +2,14 @@
 
 Provides common functionality that enhance usability of standard jvm.
 
+* [jfix-stdlib-concurrency](#jfix-stdlib-concurrency)
+* [jfix-stdlib-ratelimiter](#jfix-stdlib-ratelimiter)
+
 # jfix-stdlib-concurrency
 
 [![Maven Central](https://img.shields.io/maven-central/v/ru.fix/jfix-stdlib-concurrency.svg)](http://search.maven.org/#search%7Cga%7C1%7Cg%3A%22ru.fix%22)
 
-Named executors helps to monitor Threads state, tasks latency and throughput.  
+Named executors help to monitor Threads state, tasks latency and throughput.  
 All pools can be dynamically reconfigured  
 ```kotlin
 
@@ -69,3 +72,31 @@ NamedExecutors.profileCommonPool(profiler)
 * `pool.commonPool.steal` - count of stolen tasks
  
 ![](docs/pool-metric.png?raw=true)
+
+# jfix-stdlib-ratelimiter
+
+[![Maven Central](https://img.shields.io/maven-central/v/ru.fix/jfix-stdlib-ratelimiter.svg)](http://search.maven.org/#search%7Cga%7C1%7Cg%3A%22ru.fix%22)
+
+Provides RateLimiter and RateLimitedDispatcher.
+
+## RateLimiter
+
+`RateLimiter` interface is defined here as abstraction for `RateLimitedDispatcher`. 
+You can wrap whatever rate limiter implementation you want into it.
+
+Out of the box there is one implementation - `ConfigurableRateLimiter`. Under the hood it uses `AtomicRateLimiter` 
+of [resilience4j-ratelimiter](https://github.com/resilience4j/resilience4j) preconfigured it to acquire limits smoothly. 
+AtomicRateLimiter does not distribute events inside refresh period, it releases all available permits immediately on 
+interval start if there is a demand for them. To distribute event in our interval of 1 second `ConfigurableRateLimiter` 
+divides it into chunks so that 1 chunk of time is limited to 1 permit.The drawback is that actual rate will be lower 
+than configured - depending on requests' distribution. 
+
+## RateLimitedDispatcher
+
+Enables async usage of rate limiter. Submitted tasks are executed in the order of submission.
+
+Provides following metrics:
+* `RateLimiterDispatcher.<dispatcherName>.queue_size` – incoming tasks queue size
+* `RateLimiterDispatcher.<dispatcherName>.queue_wait` – task's wait time in the queue before execution
+* `RateLimiterDispatcher.<dispatcherName>.acquire_limit` - time to acquire limit
+* `RateLimiterDispatcher.<dispatcherName>.supplied_operation` - supplied task execution duration 
