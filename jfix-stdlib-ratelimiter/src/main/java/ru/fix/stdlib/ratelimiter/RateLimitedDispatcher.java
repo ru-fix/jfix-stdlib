@@ -5,7 +5,9 @@ import org.slf4j.LoggerFactory;
 import ru.fix.commons.profiler.PrefixedProfiler;
 import ru.fix.commons.profiler.ProfiledCall;
 import ru.fix.commons.profiler.Profiler;
+import ru.fix.dynamic.property.api.DynamicProperty;
 
+import javax.management.DynamicMBean;
 import java.lang.invoke.MethodHandles;
 import java.time.temporal.ChronoUnit;
 import java.util.concurrent.CompletableFuture;
@@ -18,7 +20,7 @@ import java.util.function.Supplier;
  * Dispatcher class which manages tasks execution with given rate. Queues and
  * executes all task in single processor thread.
  */
-public class RateLimitedDispatcher {
+public class RateLimitedDispatcher implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
     private static final String QUEUE_SIZE_INDICATOR = "queue_size";
@@ -32,15 +34,25 @@ public class RateLimitedDispatcher {
     private final String name;
     private final Profiler profiler;
 
+    private final DynamicProperty<Long> closingTimeout;
+
     /**
      * Creates new dispatcher instance
      *
      * @param name        name of dispatcher - will be used in metrics and worker's thread name
-     * @param rateLimiter rate limiter, which provides rate of operations
+     * @param rateLimiter rate limiter, which provides rate of operation
+     * @param closingTimeout max amount of time (in milliseconds) for closing dispatcher.
+     *                       If parameter equals 0 it means that timeout is infinite.
+     *                       Any negative number will be interpreted as 0.
      */
-    public RateLimitedDispatcher(String name, RateLimiter rateLimiter, Profiler profiler) {
+    public RateLimitedDispatcher(String name,
+                                 RateLimiter rateLimiter,
+                                 Profiler profiler,
+                                 DynamicProperty<Long> closingTimeout) {
         this.name = name;
         this.rateLimiter = rateLimiter;
+        this.closingTimeout = closingTimeout;
+
         this.profiler = new PrefixedProfiler(profiler, "RateLimiterDispatcher." + name + ".");
 
         thread = new Thread(new TaskProcessor(), "rate-limited-dispatcher-" + name);
@@ -71,7 +83,7 @@ public class RateLimitedDispatcher {
         State state = this.state.get();
         if (state != State.RUNNING) {
             RejectedExecutionException ex = new RejectedExecutionException(
-                "RateLimiterDispatcher [" + name + "] is in [" + state + "] state"
+                    "RateLimiterDispatcher [" + name + "] is in [" + state + "] state"
             );
             result.completeExceptionally(ex);
             return result;
@@ -88,27 +100,34 @@ public class RateLimitedDispatcher {
         rateLimiter.updateRate(rate);
     }
 
-    public void close(long timeoutMs) throws Exception {
+    @Override
+    public void close() throws Exception {
         boolean stateUpdated = state.compareAndSet(State.RUNNING, State.SHUTTING_DOWN);
         if (!stateUpdated) {
-            logger.warn("Close called on RateLimitedDispatcher [{}] with state [{}]", name, state.get());
+            logger.info("Close called on RateLimitedDispatcher [{}] with state [{}]", name, state.get());
             return;
         }
 
         thread.interrupt();
-        if (timeoutMs > 0) {
-            thread.join(timeoutMs);
+        if (closingTimeout.get() < 0) {
+            logger.warn("Rate limiter timeout must be greater than or equals 0. Current value is {}, rate limiter name: {}",
+                    closingTimeout.get(), name);
+        }
+        long timeout = Math.max(closingTimeout.get(), 0);
+
+        if (timeout > 0) {
+            thread.join(timeout);
         }
 
         stateUpdated = state.compareAndSet(State.SHUTTING_DOWN, State.TERMINATE);
         if (!stateUpdated) {
             logger.error(
-                "Can't set [TERMINATE] state to RateLimitedDispatcher [{}] in [{}] state",
-                name, state.get()
+                    "Can't set [TERMINATE] state to RateLimitedDispatcher [{}] in [{}] state",
+                    name, state.get()
             );
             return;
         }
-        thread.join();
+        thread.join(timeout);
 
         rateLimiter.close();
         profiler.detachIndicator(QUEUE_SIZE_INDICATOR);
@@ -123,15 +142,14 @@ public class RateLimitedDispatcher {
                     state.get() == State.SHUTTING_DOWN && !queue.isEmpty()) {
                 try {
                     processingCycle();
-                }
-                catch (Exception e) {
+                } catch (Exception e) {
                     logger.error(e.getMessage(), e);
                 }
             }
 
             queue.forEach(task -> {
                 task.getFuture().completeExceptionally(new RejectedExecutionException(
-                    "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state"
+                        "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state"
                 ));
                 task.getQueueWaitTime().close();
             });
@@ -141,8 +159,7 @@ public class RateLimitedDispatcher {
             Task task;
             try {
                 task = queue.take();
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
             }
@@ -159,7 +176,7 @@ public class RateLimitedDispatcher {
                     }
                     if (!acquired) {
                         future.completeExceptionally(new RejectedExecutionException(
-                            "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state"
+                                "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state"
                         ));
                         return;
                     }
@@ -167,12 +184,11 @@ public class RateLimitedDispatcher {
                 }
 
                 Object result = profiler.profile(
-                    "supplied_operation",
-                    () -> task.getSupplier().get()
+                        "supplied_operation",
+                        () -> task.getSupplier().get()
                 );
                 future.complete(result);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 future.completeExceptionally(e);
             }
         }
