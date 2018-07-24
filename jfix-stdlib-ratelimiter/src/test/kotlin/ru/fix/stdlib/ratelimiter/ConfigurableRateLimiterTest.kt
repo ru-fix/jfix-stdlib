@@ -54,8 +54,6 @@ class ConfigurableRateLimiterTest {
 
         log.info { "Expected rate: $RATE_LIMIT, actual max rate: ${report.maxRate}" }
 
-        log.info { report }
-
         assertTrue(
                 report.maxRate < RATE_LIMIT * 1.05, //to exclude time measurement error
                 """
