@@ -3,7 +3,7 @@ package ru.fix.stdlib.concurrency.threads;
 
 import ru.fix.dynamic.property.api.DynamicProperty;
 
-import java.util.function.Supplier;
+import java.util.Objects;
 
 public class Schedule {
 
@@ -32,6 +32,24 @@ public class Schedule {
 
     public long getValue() {
         return value;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        Schedule schedule = (Schedule) o;
+        return value == schedule.value
+                && type == schedule.type;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(type, value);
     }
 
     /**

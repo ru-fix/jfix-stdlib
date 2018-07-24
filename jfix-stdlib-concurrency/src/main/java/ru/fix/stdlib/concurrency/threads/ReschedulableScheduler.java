@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 import ru.fix.dynamic.property.api.DynamicProperty;
 
 import java.util.concurrent.*;
-import java.util.function.Supplier;
 
 /**
  * Wrapper under runnable task. Save and check schedule value. If value was changed, task will be rescheduled.
