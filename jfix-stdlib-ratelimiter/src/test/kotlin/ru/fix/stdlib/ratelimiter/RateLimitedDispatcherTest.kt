@@ -1,13 +1,12 @@
 package ru.fix.stdlib.ratelimiter
 
-import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
 import ru.fix.commons.profiler.NoopProfiler
 import ru.fix.commons.profiler.ProfiledCall
 import ru.fix.commons.profiler.impl.SimpleProfiler
+import ru.fix.dynamic.property.api.DynamicProperty
 import java.time.Duration
 import java.util.*
 import java.util.concurrent.CompletableFuture
@@ -17,77 +16,78 @@ import java.util.stream.Collectors
 
 class RateLimitedDispatcherTest {
 
-    private lateinit var dispatcher: RateLimitedDispatcher
-
-    @BeforeEach
-    fun before() {
-        val limiter = ConfigurableRateLimiter("test-rate-limiter", RATE_LIMIT)
-        dispatcher = RateLimitedDispatcher("test-rate-limiter-dispatcher", limiter, NoopProfiler())
-    }
-
-    @AfterEach
-    fun after() {
-        dispatcher.close(0)
-    }
-
     @Test
     fun testSubmitIncrementThroughput() {
-        assertTimeoutPreemptively(Duration.ofSeconds(15), {
-            testThroughput(BiFunction { call, counter -> this.submitIncrement(call, counter) })
-        })
+        createDispatcher(2000).use {
+            assertTimeoutPreemptively(Duration.ofSeconds(15), {
+                testThroughput(BiFunction { call, counter -> this.submitIncrement(it, call, counter) })
+            })
+        }
     }
 
     @Test
     fun testComposeIncrementThroughput() {
-        assertTimeoutPreemptively(Duration.ofSeconds(15), {
-            testThroughput(BiFunction { call, counter -> this.composeIncrement(call, counter) })
-        })
+        createDispatcher(2000).use {
+            assertTimeoutPreemptively(Duration.ofSeconds(15), {
+                testThroughput(BiFunction { call, counter -> this.composeIncrement(it, call, counter) })
+            })
+        }
     }
 
     @Test
     fun shutdown_tasksCompletedInTimeout_areCompletedNormally() {
-        assertTimeoutPreemptively(Duration.ofSeconds(5), {
-            dontProcessNewTasksInDispatcherUntilCloseIsCalled()
+        createDispatcher(1_000).use {
+            assertTimeoutPreemptively(Duration.ofSeconds(5), {
+                dontProcessNewTasksInDispatcherUntilCloseIsCalled(it)
 
-            val futures = ArrayList<CompletableFuture<*>>()
-            for (i in 1..3) {
-                futures.add(dispatcher.submit({ }))
-            }
+                val futures = ArrayList<CompletableFuture<*>>()
+                for (i in 1..3) {
+                    futures.add(it.submit({ }))
+                }
 
-            dispatcher.close(1_000)
+                it.close()
 
-            futures.forEach({ future: CompletableFuture<*> ->
-                assertTrue(future.isDone)
-                assertFalse(future.isCompletedExceptionally)
+                futures.forEach({ future: CompletableFuture<*> ->
+                    assertTrue(future.isDone)
+                    assertFalse(future.isCompletedExceptionally)
+                })
             })
-        })
+        }
     }
 
     @Test
     fun shutdown_tasksNotCompletedInTimeout_areCompletedExceptionally() {
-        assertTimeoutPreemptively(Duration.ofSeconds(5), {
+        createDispatcher(0).use {
+            assertTimeoutPreemptively(Duration.ofSeconds(5), {
 
-            dontProcessNewTasksInDispatcherUntilCloseIsCalled()
-            // give dispatcher some time to switch to terminate state
-            dispatcher.submit({
-                Thread.sleep(10)
+                dontProcessNewTasksInDispatcherUntilCloseIsCalled(it)
+                // give dispatcher some time to switch to terminate state
+                it.submit({
+                    Thread.sleep(10)
+                })
+
+                val futures = ArrayList<CompletableFuture<*>>()
+                for (i in 1..3) {
+                    futures.add(it.submit({ }))
+                }
+
+                it.close()
+
+                futures.forEach({ future: CompletableFuture<*> ->
+                    assertTrue(future.isDone)
+                    assertTrue(future.isCompletedExceptionally)
+                })
             })
-
-            val futures = ArrayList<CompletableFuture<*>>()
-            for (i in 1..3) {
-                futures.add(dispatcher.submit({ }))
-            }
-
-            dispatcher.close(0)
-
-            futures.forEach({ future: CompletableFuture<*> ->
-                assertTrue(future.isDone)
-                assertTrue(future.isCompletedExceptionally)
-            })
-        })
+        }
     }
 
-    private fun dontProcessNewTasksInDispatcherUntilCloseIsCalled() {
+    private fun createDispatcher(closingTimeout: Long): RateLimitedDispatcher {
+        val limiter = ConfigurableRateLimiter("test-rate-limiter", RATE_LIMIT)
+        return RateLimitedDispatcher("test-rate-limiter-dispatcher", limiter, NoopProfiler(),
+                DynamicProperty.of(closingTimeout))
+    }
+
+    private fun dontProcessNewTasksInDispatcherUntilCloseIsCalled(dispatcher: RateLimitedDispatcher) {
         dispatcher.submit({
             //will be interrupted by dispatcher on close
             while (true) {
@@ -128,7 +128,9 @@ class RateLimitedDispatcherTest {
         assertEquals(ITERATIONS, counter.get())
     }
 
-    private fun submitIncrement(call: ProfiledCall, counter: AtomicInteger): CompletableFuture<Int> {
+    private fun submitIncrement(dispatcher: RateLimitedDispatcher,
+                                call: ProfiledCall,
+                                counter: AtomicInteger): CompletableFuture<Int> {
         return dispatcher.submit {
             call.start()
             val result = counter.getAndIncrement()
@@ -137,7 +139,9 @@ class RateLimitedDispatcherTest {
         }
     }
 
-    private fun composeIncrement(call: ProfiledCall, counter: AtomicInteger): CompletableFuture<Int> {
+    private fun composeIncrement(dispatcher: RateLimitedDispatcher,
+                                 call: ProfiledCall,
+                                 counter: AtomicInteger): CompletableFuture<Int> {
         return dispatcher.compose {
             call.start()
             val future = CompletableFuture.supplyAsync<Int>({ counter.getAndIncrement() })
