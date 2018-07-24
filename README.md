@@ -96,6 +96,7 @@ than configured - depending on requests' distribution.
 Enables async usage of rate limiter. Submitted tasks are executed in the order of submission.
 
 Provides following metrics:
+
 * `RateLimiterDispatcher.<dispatcherName>.queue_size` – incoming tasks queue size
 * `RateLimiterDispatcher.<dispatcherName>.queue_wait` – task's wait time in the queue before execution
 * `RateLimiterDispatcher.<dispatcherName>.acquire_limit` - time to acquire limit
