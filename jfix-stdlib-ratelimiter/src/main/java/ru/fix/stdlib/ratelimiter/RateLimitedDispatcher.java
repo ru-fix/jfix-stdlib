@@ -7,7 +7,6 @@ import ru.fix.commons.profiler.ProfiledCall;
 import ru.fix.commons.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
 
-import javax.management.DynamicMBean;
 import java.lang.invoke.MethodHandles;
 import java.time.temporal.ChronoUnit;
 import java.util.concurrent.CompletableFuture;
@@ -41,8 +40,8 @@ public class RateLimitedDispatcher implements AutoCloseable {
      *
      * @param name        name of dispatcher - will be used in metrics and worker's thread name
      * @param rateLimiter rate limiter, which provides rate of operation
-     * @param closingTimeout max amount of time (in milliseconds) for closing dispatcher.
-     *                       If parameter equals 0 it means that timeout is infinite.
+     * @param closingTimeout max amount of time (in milliseconds) for waiting pending operations.
+     *                       If parameter equals 0 it means that operations was completed immediately.
      *                       Any negative number will be interpreted as 0.
      */
     public RateLimitedDispatcher(String name,
@@ -127,7 +126,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
             );
             return;
         }
-        thread.join(timeout);
+        thread.join();
 
         rateLimiter.close();
         profiler.detachIndicator(QUEUE_SIZE_INDICATOR);
