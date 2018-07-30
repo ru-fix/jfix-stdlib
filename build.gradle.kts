@@ -185,6 +185,8 @@ subprojects {
         withType<Test> {
             useJUnitPlatform()
 
+            maxParallelForks = 10
+
             testLogging {
                 events(TestLogEvent.PASSED, TestLogEvent.FAILED, TestLogEvent.SKIPPED)
                 showStandardStreams = true
