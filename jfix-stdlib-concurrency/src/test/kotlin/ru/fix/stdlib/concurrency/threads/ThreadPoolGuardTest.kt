@@ -1,5 +1,7 @@
 package ru.fix.stdlib.concurrency.threads
 
+import com.natpryce.hamkrest.assertion.assertThat
+import com.natpryce.hamkrest.containsSubstring
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 import ru.fix.commons.profiler.NoopProfiler
@@ -7,6 +9,7 @@ import ru.fix.dynamic.property.api.DynamicProperty
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class ThreadPoolGuardTest {
 
@@ -47,6 +50,8 @@ class ThreadPoolGuardTest {
         val semaphore = Semaphore(0)
 
         val alarmFlag = AtomicBoolean()
+        val dumpReceiver = AtomicReference<String>()
+
 
         val guard = CommonThreadPoolGuard(
                 NoopProfiler(),
@@ -54,7 +59,10 @@ class ThreadPoolGuardTest {
                 DynamicProperty.of(400)) { queueSize, dump ->
 
             println(dump)
-            alarmFlag.set(true)
+
+            if (alarmFlag.compareAndSet(false, true)) {
+                dumpReceiver.set(dump)
+            }
         }
 
         val futures = mutableListOf<CompletableFuture<*>>()
@@ -71,5 +79,8 @@ class ThreadPoolGuardTest {
         futures.forEach { it.join() }
 
         Assertions.assertEquals(true, alarmFlag.get())
+
+        assertThat(dumpReceiver.get(), containsSubstring(this::class.java.simpleName))
+        assertThat(dumpReceiver.get(), containsSubstring("Semaphore"))
     }
 }
