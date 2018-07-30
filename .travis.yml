@@ -9,7 +9,7 @@ jobs:
     - stage: build
       if: tag IS blank
       install: skip
-      before_script: if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then openssl aes-256-cbc -K $encrypted_d0c8c7a16e6b_key -iv $encrypted_d0c8c7a16e6b_iv -in secring.gpg.enc -out secring.gpg -d; fi
+      before_script: if [[ $encrypted_d0c8c7a16e6b_key ]]; then openssl aes-256-cbc -K $encrypted_d0c8c7a16e6b_key -iv $encrypted_d0c8c7a16e6b_iv -in secring.gpg.enc -out secring.gpg -d; fi
       script: ./gradlew clean build
 
     - stage: deploy
