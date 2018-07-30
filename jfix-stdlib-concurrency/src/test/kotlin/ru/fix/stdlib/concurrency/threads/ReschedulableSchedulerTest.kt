@@ -2,7 +2,6 @@ package ru.fix.stdlib.concurrency.threads
 
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import ru.fix.commons.profiler.NoopProfiler
 import ru.fix.commons.profiler.impl.SimpleProfiler
