@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import ru.fix.commons.profiler.NoopProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -20,9 +21,12 @@ class ThreadPoolGuardTest {
 
         val alarmFlag = AtomicBoolean()
 
-        val guard = CommonThreadPoolGuard(
+        val pool = ForkJoinPool(4)
+
+        val guard = ForkJoinThreadPoolGuard(
                 NoopProfiler(),
                 Schedule.withRate(DynamicProperty.of(100L)),
+                pool,
                 DynamicProperty.of(400)) { queueSize, dump ->
             alarmFlag.set(true)
         }
@@ -30,9 +34,11 @@ class ThreadPoolGuardTest {
         val futures = mutableListOf<CompletableFuture<*>>()
 
         for (i in 1..300) {
-            futures.add(CompletableFuture.runAsync {
-                semaphore.acquire()
-            })
+            futures.add(
+                    CompletableFuture.runAsync(Runnable {
+                        semaphore.acquire()
+                    }, pool)
+            )
         }
 
         Thread.sleep(300)
@@ -40,7 +46,7 @@ class ThreadPoolGuardTest {
 
         futures.forEach { it.join() }
 
-        Assertions.assertEquals(false, alarmFlag.get())
+        Assertions.assertFalse(alarmFlag.get())
     }
 
 
@@ -52,10 +58,12 @@ class ThreadPoolGuardTest {
         val alarmFlag = AtomicBoolean()
         val dumpReceiver = AtomicReference<String>()
 
+        val pool = ForkJoinPool(4)
 
-        val guard = CommonThreadPoolGuard(
+        val guard = ForkJoinThreadPoolGuard(
                 NoopProfiler(),
                 Schedule.withRate(DynamicProperty.of(100L)),
+                pool,
                 DynamicProperty.of(400)) { queueSize, dump ->
 
             println(dump)
@@ -68,9 +76,11 @@ class ThreadPoolGuardTest {
         val futures = mutableListOf<CompletableFuture<*>>()
 
         for (i in 1..500) {
-            futures.add(CompletableFuture.runAsync {
-                semaphore.acquire()
-            })
+            futures.add(
+                    CompletableFuture.runAsync(Runnable {
+                        semaphore.acquire()
+                    }, pool)
+            )
         }
 
         Thread.sleep(300)
@@ -78,7 +88,7 @@ class ThreadPoolGuardTest {
 
         futures.forEach { it.join() }
 
-        Assertions.assertEquals(true, alarmFlag.get())
+        Assertions.assertTrue(alarmFlag.get())
 
         assertThat(dumpReceiver.get(), containsSubstring(this::class.java.simpleName))
         assertThat(dumpReceiver.get(), containsSubstring("Semaphore"))
