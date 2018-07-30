@@ -47,7 +47,7 @@ class RateLimitedDispatcherTest {
 
                 it.close()
 
-                futures.forEach { it.join() }
+                CompletableFuture.allOf(*futures.toTypedArray()).exceptionally { null }.join()
 
                 futures.forEach({ future: CompletableFuture<*> ->
                     assertTrue(future.isDone)
@@ -75,7 +75,7 @@ class RateLimitedDispatcherTest {
 
                 it.close()
 
-                futures.forEach { it.join() }
+                CompletableFuture.allOf(*futures.toTypedArray()).exceptionally { null }.join()
 
                 futures.forEach({ future: CompletableFuture<*> ->
                     assertTrue(future.isDone)
