@@ -17,8 +17,6 @@ import kotlin.properties.Delegates
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 
-val groupId = "ru.fix"
-
 buildscript {
     repositories {
         jcenter()
@@ -58,6 +56,7 @@ val signingSecretKeyRingFile by envConfig()
 plugins {
     kotlin("jvm") version "${Vers.kotlin}" apply false
     signing
+    `maven-publish`
 }
 
 apply {
@@ -68,7 +67,7 @@ subprojects {
     group = "ru.fix"
 
     apply {
-        plugin("maven")
+        plugin("maven-publish")
         plugin("signing")
         plugin("java")
     }
@@ -78,7 +77,6 @@ subprojects {
         mavenCentral()
         mavenLocal()
     }
-
 
     val sourcesJar by tasks.creating(Jar::class) {
         classifier = "sources"
@@ -100,84 +98,71 @@ subprojects {
         add("archives", javadocJar)
     }
 
-    configure<SigningExtension> {
-
-        if (!signingKeyId.isNullOrEmpty()) {
-            ext["signing.keyId"] = signingKeyId
-            ext["signing.password"] = signingPassword
-            ext["signing.secretKeyRingFile"] = signingSecretKeyRingFile
-            isRequired = true
-        } else {
-            logger.warn("${project.name}: Signing key not provided. Disable signing.")
-            isRequired = false
-        }
-
-        sign(configurations.archives)
-    }
-
-    tasks {
-
-        "uploadArchives"(Upload::class) {
-
-            dependsOn(javadocJar, sourcesJar)
-
-            repositories {
-                withConvention(MavenRepositoryHandlerConvention::class) {
-                    mavenDeployer {
-
-                        withGroovyBuilder {
-                            //Sign pom.xml file
-                            "beforeDeployment" {
-                                signing.signPom(delegate as MavenDeployment)
-                            }
-
-                            "repository"(
-                                    "url" to URI("$repositoryUrl")) {
-                                "authentication"(
-                                        "userName" to "$repositoryUser",
-                                        "password" to "$repositoryPassword"
-                                )
-                            }
-                        }
-
-                        pom.project {
-                            withGroovyBuilder {
-                                "artifactId"("${project.name}")
-                                "groupId"("$groupId")
-                                "version"("$version")
-
-                                "name"("${groupId}:${project.name}")
-                                "description"("Commons Profiler provide basic API" +
-                                        " for application metrics measurement.")
-
-                                "url"("https://github.com/ru-fix/jfix-stdlib")
-
-                                "licenses" {
-                                    "license" {
-                                        "name"("The Apache License, Version 2.0")
-                                        "url"("http://www.apache.org/licenses/LICENSE-2.0.txt")
-                                    }
-                                }
-
-                                "developers" {
-                                    "developer"{
-                                        "id"("swarmshine")
-                                        "name"("Kamil Asfandiyarov")
-                                        "url"("https://github.com/swarmshine")
-                                    }
-                                }
-                                "scm" {
-                                    "url"("https://github.com/ru-fix/jfix-stdlib")
-                                    "connection"("https://github.com/ru-fix/jfix-stdlib.git")
-                                    "developerConnection"("https://github.com/ru-fix/jfix-stdlib.git")
-                                }
-                            }
-                        }
+    publishing {
+        repositories {
+            maven {
+                url = uri("$repositoryUrl")
+                if (url.scheme.startsWith("http", true)) {
+                    credentials {
+                        username = "$repositoryUser"
+                        password = "$repositoryPassword"
                     }
                 }
             }
         }
+        (publications) {
+            "maven"(MavenPublication::class) {
+                from(components["java"])
 
+                artifact(sourcesJar)
+                artifact(javadocJar)
+
+                pom {
+                    name.set("${project.group}:${project.name}")
+                    description.set("jfix-stdlib provides common functionality that enhance usability of standard jvm. ")
+                    url.set("https://github.com/ru-fix/jfix-stdlib")
+                    licenses {
+                        license {
+                            name.set("The Apache License, Version 2.0")
+                            url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
+                        }
+                    }
+                    developers {
+                        developer {
+                            id.set("swarmshine")
+                            name.set("Kamil Asfandiyarov")
+                            url.set("https://github.com/swarmshine")
+                        }
+                    }
+                    scm {
+                        url.set("https://github.com/ru-fix/jfix-stdlib")
+                        connection.set("https://github.com/ru-fix/jfix-stdlib.git")
+                        developerConnection.set("https://github.com/ru-fix/jfix-stdlib.git")
+                    }
+                }
+            }
+        }
+    }
+
+    configure<SigningExtension> {
+
+        if (!signingKeyId.isNullOrEmpty()) {
+            project.ext["signing.keyId"] = signingKeyId
+            project.ext["signing.password"] = signingPassword
+            project.ext["signing.secretKeyRingFile"] = signingSecretKeyRingFile
+
+            logger.info("Signing key id provided. Sign artifacts for $project.")
+
+            isRequired = true
+        } else {
+            logger.warn("${project.name}: Signing key not provided. Disable signing for  $project.")
+            isRequired = false
+        }
+
+        sign(publishing.publications)
+    }
+
+    tasks {
         withType<KotlinCompile> {
             kotlinOptions.jvmTarget = "1.8"
         }
