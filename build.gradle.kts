@@ -93,11 +93,6 @@ subprojects {
         dependsOn(tasks.getByName("javadoc"))
     }
 
-    artifacts {
-        add("archives", sourcesJar)
-        add("archives", javadocJar)
-    }
-
     publishing {
         repositories {
             maven {
