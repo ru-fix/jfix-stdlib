@@ -12,6 +12,7 @@ import org.gradle.api.tasks.testing.logging.TestLogEvent
 import org.gradle.internal.authentication.DefaultBasicAuthentication
 import org.gradle.kotlin.dsl.repositories
 import org.gradle.kotlin.dsl.version
+import org.jetbrains.dokka.gradle.DokkaTask
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import kotlin.properties.Delegates
 import kotlin.properties.ReadOnlyProperty
@@ -70,6 +71,7 @@ subprojects {
         plugin("maven-publish")
         plugin("signing")
         plugin("java")
+        plugin("org.jetbrains.dokka")
     }
 
     repositories {
@@ -84,14 +86,18 @@ subprojects {
         from("src/main/kotlin")
     }
 
-    val javadocJar by tasks.creating(Jar::class) {
+    val dokkaTask by tasks.creating(DokkaTask::class){
+        outputFormat = "javadoc"
+        outputDirectory = "$buildDir/dokka"
+    }
+
+    val dokkaJar by tasks.creating(Jar::class) {
         classifier = "javadoc"
 
-        val javadoc = tasks.getByPath("javadoc") as Javadoc
-        from(javadoc.destinationDir)
-
-        dependsOn(tasks.getByName("javadoc"))
+        from(dokkaTask.outputDirectory)
+        dependsOn(dokkaTask)
     }
+
 
     publishing {
         repositories {
@@ -110,7 +116,7 @@ subprojects {
                 from(components["java"])
 
                 artifact(sourcesJar)
-                artifact(javadocJar)
+                artifact(dokkaJar)
 
                 pom {
                     name.set("${project.group}:${project.name}")

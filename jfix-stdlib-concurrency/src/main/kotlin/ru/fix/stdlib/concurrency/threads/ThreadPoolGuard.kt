@@ -5,7 +5,6 @@ import ru.fix.dynamic.property.api.DynamicProperty
 import java.lang.management.ManagementFactory
 import java.util.concurrent.ForkJoinPool
 
-
 open class ThreadPoolGuard(profiler: Profiler,
                            checkRate: DynamicProperty<Schedule>,
                            private val predicate: () -> Boolean,
