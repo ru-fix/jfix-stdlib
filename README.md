@@ -9,7 +9,8 @@ Provides common functionality that enhance usability of standard jvm.
 
 [![Maven Central](https://img.shields.io/maven-central/v/ru.fix/jfix-stdlib-concurrency.svg)](http://search.maven.org/#search%7Cga%7C1%7Cg%3A%22ru.fix%22)
 
-Named executors help to monitor Threads state, tasks latency and throughput.  
+## NamedExecutors DynamicPool
+Named executors helps to monitor threads state, tasks latency and throughput.  
 All pools can be dynamically reconfigured  
 ```kotlin
 
@@ -24,6 +25,7 @@ val executor = NamedExecutors.newDynamicPool(
                 profiler)
 ```
 
+## NamedExecutors Scheduler
 Scheduler is based on `ScheduledThreadPoolExecutor` but it can change it's rate dynamically.
 ```kotlin
 
@@ -48,6 +50,8 @@ scheduler.schedule(
         })        
                
 ```
+
+## NamedExecutors metrics
 Common metrics that will work out of the box:
 
 * `pool.<poolName>.queue` - size of pending tasks submitted to pool
@@ -72,6 +76,20 @@ NamedExecutors.profileCommonPool(profiler)
 * `pool.commonPool.steal` - count of stolen tasks
  
 ![](docs/pool-metric.png?raw=true)
+
+## ThreadPoolGuard
+CommonThreadPoolGuard, ThreadPoolGuard allows you to watch for queue size of the thread pool. 
+If it outgrows threshold guard will invoke user handler and print stack trace of all threads.
+
+```kotlin
+val guard = CommonThreadPoolGuard(
+                profiler,
+                checkRate,
+                threshold) { queueSize, dump ->
+            log.error("Queue size $queueSize is too big. Current threads state: $dump")
+        }
+```
+ 
 
 # jfix-stdlib-ratelimiter
 
