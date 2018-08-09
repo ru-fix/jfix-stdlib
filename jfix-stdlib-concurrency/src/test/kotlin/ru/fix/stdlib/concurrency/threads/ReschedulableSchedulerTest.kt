@@ -3,6 +3,8 @@ package ru.fix.stdlib.concurrency.threads
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import ru.fix.aggregating.profiler.AggregatingProfiler
+import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.time.Duration
 import java.time.Instant

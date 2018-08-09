@@ -3,6 +3,9 @@ package ru.fix.stdlib.ratelimiter
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
+import ru.fix.aggregating.profiler.AggregatingProfiler
+import ru.fix.aggregating.profiler.NoopProfiler
+import ru.fix.aggregating.profiler.ProfiledCall
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.time.Duration
 import java.util.*

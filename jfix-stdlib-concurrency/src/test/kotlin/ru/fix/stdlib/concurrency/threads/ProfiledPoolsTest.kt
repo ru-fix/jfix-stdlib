@@ -7,6 +7,7 @@ import com.natpryce.hamkrest.greaterThanOrEqualTo
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import ru.fix.aggregating.profiler.AggregatingProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ForkJoinPool
