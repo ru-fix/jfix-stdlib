@@ -7,7 +7,7 @@ object Vers {
     val hamkrest = "1.4.2.2"
 
     val resilience4j = "0.13.0"
-    val aggregatingProfiler = "1.3.3"
+    val aggregatingProfiler = "1.4.3"
     val dynamicProperty = "1.0.5"
 }
 
@@ -33,7 +33,7 @@ object Libs {
 
 
     val resilience4jRatelimiter = "io.github.resilience4j:resilience4j-ratelimiter:${Vers.resilience4j}"
-    val aggregatingProfiler = "ru.fix:commons-profiler-api:${Vers.aggregatingProfiler}"
+    val aggregatingProfiler = "ru.fix:aggregating-profiler:${Vers.aggregatingProfiler}"
     val dynamicProperty = "ru.fix:dynamic-property-api:${Vers.dynamicProperty}"
 
 }

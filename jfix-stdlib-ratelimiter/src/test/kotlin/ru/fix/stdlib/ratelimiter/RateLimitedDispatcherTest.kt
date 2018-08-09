@@ -3,9 +3,6 @@ package ru.fix.stdlib.ratelimiter
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
-import ru.fix.commons.profiler.NoopProfiler
-import ru.fix.commons.profiler.ProfiledCall
-import ru.fix.commons.profiler.impl.SimpleProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.time.Duration
 import java.util.*
@@ -102,7 +99,7 @@ class RateLimitedDispatcherTest {
 
     private fun testThroughput(biFunction: BiFunction<ProfiledCall, AtomicInteger, CompletableFuture<Int>>) {
         val counter = AtomicInteger(0)
-        val profiler = SimpleProfiler()
+        val profiler = AggregatingProfiler()
         val profilerReporter = profiler.createReporter()
 
         profilerReporter.buildReportAndReset()

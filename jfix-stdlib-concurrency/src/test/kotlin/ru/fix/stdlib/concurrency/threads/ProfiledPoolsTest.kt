@@ -7,7 +7,6 @@ import com.natpryce.hamkrest.greaterThanOrEqualTo
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import ru.fix.commons.profiler.impl.SimpleProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ForkJoinPool
@@ -19,7 +18,7 @@ class ProfiledPoolsTest {
     @Test()
     fun `submit tasks, close pool and wait for termination`() {
 
-        val profiler = SimpleProfiler()
+        val profiler = AggregatingProfiler()
         val reporter = profiler.createReporter()
 
 
@@ -71,7 +70,7 @@ class ProfiledPoolsTest {
     @Test()
     fun `common pool indicators display common pool state`() {
 
-        val profiler = SimpleProfiler()
+        val profiler = AggregatingProfiler()
         NamedExecutors.profileCommonPool(profiler)
 
         val reporter = profiler.createReporter()
@@ -105,7 +104,7 @@ class ProfiledPoolsTest {
 
     @Test()
     fun `single task submission`() {
-        val profiler = SimpleProfiler()
+        val profiler = AggregatingProfiler()
         val reporter = profiler.createReporter()
 
         val pool = NamedExecutors.newDynamicPool("test", DynamicProperty.of(2), profiler)
@@ -146,7 +145,7 @@ class ProfiledPoolsTest {
 
     @Test()
     fun `single task schedulling`() {
-        val profiler = SimpleProfiler()
+        val profiler = AggregatingProfiler()
         val reporter = profiler.createReporter()
 
         val pool = NamedExecutors.newScheduledExecutor("test", DynamicProperty.of(2), profiler)
@@ -182,7 +181,7 @@ class ProfiledPoolsTest {
     @Test()
     fun `schedule tasks, close pool and wait for termination`() {
 
-        val profiler = SimpleProfiler()
+        val profiler = AggregatingProfiler()
         val reporter = profiler.createReporter()
 
 

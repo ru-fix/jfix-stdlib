@@ -2,9 +2,9 @@ package ru.fix.stdlib.ratelimiter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.fix.commons.profiler.PrefixedProfiler;
-import ru.fix.commons.profiler.ProfiledCall;
-import ru.fix.commons.profiler.Profiler;
+import ru.fix.aggregating.profiler.PrefixedProfiler;
+import ru.fix.aggregating.profiler.ProfiledCall;
+import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
 
 import java.lang.invoke.MethodHandles;

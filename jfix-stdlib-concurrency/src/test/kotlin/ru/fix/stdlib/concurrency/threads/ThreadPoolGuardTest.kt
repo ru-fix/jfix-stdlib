@@ -4,7 +4,6 @@ import com.natpryce.hamkrest.assertion.assertThat
 import com.natpryce.hamkrest.containsSubstring
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
-import ru.fix.commons.profiler.NoopProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ForkJoinPool

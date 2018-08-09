@@ -77,7 +77,6 @@ subprojects {
     repositories {
         jcenter()
         mavenCentral()
-        mavenLocal()
     }
 
     val sourcesJar by tasks.creating(Jar::class) {

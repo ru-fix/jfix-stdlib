@@ -3,8 +3,6 @@ package ru.fix.stdlib.concurrency.threads
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import ru.fix.commons.profiler.NoopProfiler
-import ru.fix.commons.profiler.impl.SimpleProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.time.Duration
 import java.time.Instant
@@ -111,7 +109,7 @@ class ReschedulableSchedulerTest {
      */
     @Test
     fun `dealy dynamically changes over time`() {
-        val scheduler = NamedExecutors.newSingleThreadScheduler("", SimpleProfiler())
+        val scheduler = NamedExecutors.newSingleThreadScheduler("", AggregatingProfiler())
 
         val scheduleCounter = AtomicInteger()
 
