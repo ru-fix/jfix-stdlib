@@ -1,5 +1,7 @@
 package ru.fix.stdlib.ratelimiter
 
+import org.hamcrest.MatcherAssert.assertThat
+import org.hamcrest.Matchers.lessThanOrEqualTo
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
@@ -127,7 +129,8 @@ class RateLimitedDispatcherTest {
 
         LOGGER.info("Current throughput " + report.callsThroughputAvg)
 
-        assertTrue(report.callsThroughputAvg <= RATE_LIMIT * 1.25)
+        assertThat(report.callsThroughputAvg, lessThanOrEqualTo((RATE_LIMIT * 1.25 * 1000).toLong()))
+
 
         assertEquals(ITERATIONS, counter.get())
     }

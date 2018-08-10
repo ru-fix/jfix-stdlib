@@ -30,6 +30,7 @@ object Libs {
     val junit_parametri = "org.junit.jupiter:junit-jupiter-params:${Vers.junit}"
     val junit_engine = "org.junit.jupiter:junit-jupiter-engine:${Vers.junit}"
     val hamkrest = "com.natpryce:hamkrest:${Vers.hamkrest}"
+    val hamcrest = "org.hamcrest:hamcrest-all:1.3"
 
 
     val resilience4jRatelimiter = "io.github.resilience4j:resilience4j-ratelimiter:${Vers.resilience4j}"

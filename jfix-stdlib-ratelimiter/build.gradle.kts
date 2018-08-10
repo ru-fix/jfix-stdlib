@@ -16,7 +16,7 @@ dependencies {
     testCompile(Libs.kotlin_stdlib)
     testCompile(Libs.kotlin_reflect)
 
-    testCompile(Libs.hamkrest)
+    testCompile(Libs.hamcrest)
     testCompile(Libs.mockito)
 
     testCompile(Libs.junit_api)
