@@ -25,6 +25,16 @@ public class ConfigurableRateLimiter implements RateLimiter {
         );
     }
 
+    public ConfigurableRateLimiter(String name, int limitForPeriod, Duration limitRefreshPeriod) {
+        rateLimiter = new AtomicRateLimiter(
+                name,
+                RateLimiterConfig.custom()
+                        .limitForPeriod(limitForPeriod)
+                        .limitRefreshPeriod(limitRefreshPeriod)
+                        .build()
+        );
+    }
+
     @Override
     public boolean tryAcquire() {
         return rateLimiter.getPermission(Duration.ZERO);
