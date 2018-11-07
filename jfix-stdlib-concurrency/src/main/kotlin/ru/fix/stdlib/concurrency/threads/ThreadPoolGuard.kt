@@ -3,6 +3,7 @@ package ru.fix.stdlib.concurrency.threads
 import ru.fix.aggregating.profiler.Profiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.lang.management.ManagementFactory
+import java.lang.management.ThreadInfo
 import java.util.concurrent.ForkJoinPool
 
 open class ThreadPoolGuard(profiler: Profiler,
@@ -29,7 +30,10 @@ open class ThreadPoolGuard(profiler: Profiler,
         val dump = StringBuilder()
         val threadMXBean = ManagementFactory.getThreadMXBean()
         val threadInfos = threadMXBean.getThreadInfo(threadMXBean.allThreadIds, 1000)
-        for (threadInfo in threadInfos) {
+        for (threadInfo: ThreadInfo? in threadInfos) {
+            if (threadInfo == null) {
+                continue
+            }
             dump.append("\"")
             dump.append(threadInfo.threadName)
             dump.append("\" ")
