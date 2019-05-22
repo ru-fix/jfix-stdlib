@@ -1,10 +1,10 @@
 package ru.fix.stdlib.concurrency.threads
 
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import ru.fix.aggregating.profiler.AggregatingProfiler
 import ru.fix.aggregating.profiler.NoopProfiler
+import ru.fix.dynamic.property.api.AtomicProperty
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.time.Duration
 import java.time.Instant
@@ -159,5 +159,38 @@ class ReschedulableSchedulerTest {
         assertTrue(scheduler.awaitTermination(20, SECONDS))
 
         assertTrue(firstDelay.get() + 100 < secondDelay.get() - 100)
+    }
+
+    @Test
+    fun `reschedule must occur immediately if scheduled property changed`() {
+        val scheduler = NamedExecutors.newSingleThreadScheduler("", AggregatingProfiler())
+
+        val taskExecutionCounter = AtomicInteger(0)
+
+        val countDownLatchOfFirstTaskExecution = CountDownLatch(1)
+        val countDownLatch = CountDownLatch(3)
+
+        val property = AtomicProperty(10000)
+
+        scheduler.schedule(Schedule.withRate(property), 0, Runnable {
+            taskExecutionCounter.incrementAndGet()
+
+            if (1 == taskExecutionCounter.get()) {
+                countDownLatchOfFirstTaskExecution.countDown()
+            } else {
+                countDownLatch.countDown()
+            }
+        })
+
+        assertTrue(countDownLatchOfFirstTaskExecution.await(20, SECONDS))
+        assertEquals(1, taskExecutionCounter.get() )
+
+        //Change property, reschedule must occur
+        property.set(500)
+
+        assertTimeout(Duration.ofSeconds(20)) {
+            assertTrue(countDownLatch.await(20, SECONDS))
+            assertTrue(4 <= taskExecutionCounter.get())
+        }
     }
 }
