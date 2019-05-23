@@ -12,6 +12,8 @@ import java.util.concurrent.*;
 public class ReschedulableScheduler {
     private static final Logger log = LoggerFactory.getLogger(ReschedulableScheduler.class);
 
+    private static final long DEFAULT_START_DELAY = 0;
+
     private final ScheduledExecutorService executorService;
 
     /**
@@ -31,9 +33,23 @@ public class ReschedulableScheduler {
                                        long startDelay,
                                        Runnable task) {
 
-        SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(scheduleSupplier, task,
-                executorService);
-        return taskWrapper.launch(startDelay);
+        SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
+                scheduleSupplier,
+                startDelay,
+                task,
+                executorService
+        );
+        return taskWrapper.launch();
+    }
+
+    public ScheduledFuture<?> schedule(DynamicProperty<Schedule> scheduleSupplier, Runnable task) {
+        SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
+                scheduleSupplier,
+                DEFAULT_START_DELAY,
+                task,
+                executorService
+        );
+        return taskWrapper.launch();
     }
 
     /**
@@ -67,6 +83,7 @@ public class ReschedulableScheduler {
 
         private Schedule previousSchedule;
         private DynamicProperty<Schedule> scheduleSupplier;
+        private final long startDelay;
 
         private ScheduledFuture<?> scheduledFuture;
 
@@ -80,9 +97,12 @@ public class ReschedulableScheduler {
         private volatile long lastExecutedTs = 0;
 
         public SelfSchedulableTaskWrapper(DynamicProperty<Schedule> scheduleSupplier,
-                                          Runnable task, ScheduledExecutorService executorService) {
+                                          long startDelay,
+                                          Runnable task,
+                                          ScheduledExecutorService executorService) {
             this.scheduleSupplier = scheduleSupplier;
             this.scheduleSupplier.addListener(this::checkPreviousScheduleAndRestartTask);
+            this.startDelay = startDelay;
             this.task = task;
             this.executorService = executorService;
         }
@@ -122,15 +142,14 @@ public class ReschedulableScheduler {
             if (!previousSchedule.equals(schedule)) {
                 previousSchedule = schedule;
                 this.scheduledFuture.cancel(false);
-                this.scheduledFuture = schedule(this, schedule, schedule.getValue());
+                this.scheduledFuture = schedule(this, schedule, this.startDelay);
             }
         }
 
-
-        synchronized ScheduledFuture<?> launch(long startDelay) {
+        synchronized ScheduledFuture<?> launch() {
             Schedule schedule = scheduleSupplier.get();
 
-            this.scheduledFuture = schedule(this, schedule, startDelay);
+            this.scheduledFuture = schedule(this, schedule, this.startDelay);
             previousSchedule = schedule;
 
             return reschedulableFuture;

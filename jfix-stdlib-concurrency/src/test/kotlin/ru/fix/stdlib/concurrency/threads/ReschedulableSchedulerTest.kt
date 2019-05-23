@@ -124,7 +124,7 @@ class ReschedulableSchedulerTest {
 
         val prevRunTimestamp = AtomicReference(Instant.now())
 
-        val countJobsLatch = CountDownLatch(2)
+        val countJobsLatch = CountDownLatch(3)
         val counter = AtomicInteger()
 
         val firstDelay = AtomicLong()
@@ -141,10 +141,15 @@ class ReschedulableSchedulerTest {
             } else {
                 val delay = Duration.between(prevRunTimestamp.get(), Instant.now()).toMillis()
 
+                /*
+                After job execution when currentRunNum=1 then ScheduleDelay switch to 1500 from 10.
+                First run after switching will be happen immediately because startDelay=0,
+                but next runs will be happening with delay=1500.
+                How runs look like: 0 {10 delay} 1 {switching} 2 {1500 delay} 3 {1500 delay} ...
+                 */
                 if (currentRunNum == 1) {
                     firstDelay.set(delay)
-
-                } else if (currentRunNum == 2) {
+                } else if (currentRunNum == 3) {
                     secondDelay.set(delay)
                 }
                 println("run $currentRunNum delay: ${delay}ms")
@@ -172,7 +177,7 @@ class ReschedulableSchedulerTest {
 
         val property = AtomicProperty(120000)
 
-        scheduler.schedule(Schedule.withRate(property), 0, Runnable {
+        scheduler.schedule(Schedule.withRate(property), Runnable {
             taskExecutionCounter.incrementAndGet()
 
             if (1 == taskExecutionCounter.get()) {
