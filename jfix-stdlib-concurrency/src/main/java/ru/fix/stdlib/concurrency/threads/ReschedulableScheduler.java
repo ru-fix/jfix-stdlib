@@ -42,6 +42,11 @@ public class ReschedulableScheduler {
         return taskWrapper.launch();
     }
 
+    /**
+     * change execution by schedule type with start delay 0
+     *
+     * @return result task from executionService
+     */
     public ScheduledFuture<?> schedule(DynamicProperty<Schedule> scheduleSupplier, Runnable task) {
         SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
                 scheduleSupplier,
