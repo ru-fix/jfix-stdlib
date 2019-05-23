@@ -82,6 +82,7 @@ public class ReschedulableScheduler {
         public SelfSchedulableTaskWrapper(DynamicProperty<Schedule> scheduleSupplier,
                                           Runnable task, ScheduledExecutorService executorService) {
             this.scheduleSupplier = scheduleSupplier;
+            this.scheduleSupplier.addListener(this::checkPreviousScheduleAndRestartTask);
             this.task = task;
             this.executorService = executorService;
         }
@@ -109,13 +110,11 @@ public class ReschedulableScheduler {
                 log.error("ReschedulableScheduler task failed due to: " + exc.getMessage(), exc);
 
             } finally {
-                checkPreviousScheduleAndRestartTask();
+                checkPreviousScheduleAndRestartTask(scheduleSupplier.get());
             }
         }
 
-        private synchronized void checkPreviousScheduleAndRestartTask() {
-            Schedule schedule = scheduleSupplier.get();
-
+        private synchronized void checkPreviousScheduleAndRestartTask(Schedule schedule) {
             if (reschedulableFuture.isCancelled()) {
                 return;
             }
