@@ -170,7 +170,7 @@ class ReschedulableSchedulerTest {
         val countDownLatchOfFirstTaskExecution = CountDownLatch(1)
         val countDownLatch = CountDownLatch(3)
 
-        val property = AtomicProperty(10000)
+        val property = AtomicProperty(120000)
 
         scheduler.schedule(Schedule.withRate(property), 0, Runnable {
             taskExecutionCounter.incrementAndGet()
