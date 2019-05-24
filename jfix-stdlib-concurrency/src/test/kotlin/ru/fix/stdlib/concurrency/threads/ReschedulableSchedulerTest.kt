@@ -177,7 +177,7 @@ class ReschedulableSchedulerTest {
 
         val property = AtomicProperty(120000)
 
-        scheduler.schedule(Schedule.withRate(property), Runnable {
+        scheduler.schedule(Schedule.withDelay(property), Runnable {
             taskExecutionCounter.incrementAndGet()
 
             if (1 == taskExecutionCounter.get()) {
