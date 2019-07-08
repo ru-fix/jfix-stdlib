@@ -4,6 +4,7 @@ Provides common functionality that enhance usability of standard jvm.
 
 * [jfix-stdlib-concurrency](#jfix-stdlib-concurrency)
 * [jfix-stdlib-ratelimiter](#jfix-stdlib-ratelimiter)
+* [jfix-stdlib-socket](#jfix-stdlib-socket)
 
 # jfix-stdlib-concurrency
 
@@ -118,4 +119,14 @@ Provides following metrics:
 * `RateLimiterDispatcher.<dispatcherName>.queue_size` – incoming tasks queue size
 * `RateLimiterDispatcher.<dispatcherName>.queue_wait` – task's wait time in the queue before execution
 * `RateLimiterDispatcher.<dispatcherName>.acquire_limit` - time to acquire limit
-* `RateLimiterDispatcher.<dispatcherName>.supplied_operation` - supplied task execution duration 
+* `RateLimiterDispatcher.<dispatcherName>.supplied_operation` - supplied task execution duration
+
+# jfix-stdlib-socket
+
+[![Maven Central](https://img.shields.io/maven-central/v/ru.fix/jfix-stdlib-socket.svg)](http://search.maven.org/#search%7Cga%7C1%7Cg%3A%22ru.fix%22)
+
+Provides SocketChecker.
+
+## SocketChecker
+
+Allows to check port availability by its port number. Allows to get random free port number in range from 30000 to 60000.
