@@ -2,6 +2,7 @@ package ru.fix.stdlib.socket;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.fix.stdlib.socket.exeption.TooManyRetriesException;
 
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
@@ -49,7 +50,7 @@ public class SocketChecker {
             }
         }
 
-        throw new RuntimeException("100 attempts failed to get available random port.");
+        throw new TooManyRetriesException("100 attempts failed to get available random port.");
     }
 
 }
