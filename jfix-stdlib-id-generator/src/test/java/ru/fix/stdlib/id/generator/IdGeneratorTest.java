@@ -16,17 +16,15 @@ class IdGeneratorTest {
     private static final int TEST_COUNTER_VAL = 53;
 
     @Test
-    public void shouldGenerateCorrectlyFormattedId() throws Exception {
+    public void shouldGenerateCorrectlyFormattedId() {
         Clock clock = mock(Clock.class);
         when(clock.millis()).thenReturn(1450894554618L);
 
         AtomicInteger counter = new AtomicInteger(TEST_COUNTER_VAL - 1);
 
-        IdGenerator generator = new IdGenerator(TEST_SERVER_ID);
-        generator.clock = clock;
-        generator.counter = counter;
+        IdGenerator generator = new IdGenerator(TEST_SERVER_ID, counter, clock);
 
-        Long generatedId = generator.nextVal();
+        long generatedId = generator.nextVal();
 
         // 01/01/2015 0:00:00 equals   to 1420070400000 milliseconds from 01/01/1970 0:00:00
         //
@@ -58,14 +56,14 @@ class IdGeneratorTest {
                 fillZeros(Long.toBinaryString(generatedId))
         );
 
-        long extractedTime = generator.extractTimeStamp(generatedId);
+        long extractedTime = IdGenerator.extractTimeStamp(generatedId);
         assertEquals(extractedTime, 1450894554618L);
 
     }
 
     private String fillZeros(String in) {
         while (in.length() < 64) {
-            in = "0" + in;
+            in = "0".concat(in);
         }
         return in;
     }
