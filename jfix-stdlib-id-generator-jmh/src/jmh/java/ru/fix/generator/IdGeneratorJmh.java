@@ -14,6 +14,7 @@ public class IdGeneratorJmh {
     final long timestamp = System.currentTimeMillis();
 
     Synchronized sync = new Synchronized();
+
     @Benchmark
     public int sync() {
         return sync.doWork();
@@ -30,7 +31,7 @@ public class IdGeneratorJmh {
 class Synchronized {
     int value;
 
-    public synchronized int doWork(){
+    public synchronized int doWork() {
         return value++;
     }
 }
@@ -40,21 +41,21 @@ class RW {
 
     ReadWriteLock lock = new ReentrantReadWriteLock();
 
-    public int doWork(){
+    public int doWork() {
         lock.readLock().lock();
-        try {
-            int result = value++;
+        int result = value++;
 
-            if(result % 1000 == 0){
-                lock.writeLock().lock();
-                value++;
-                lock.writeLock().unlock();
-            }
+        lock.readLock().unlock();
 
-            return result;
 
-        }finally {
-            lock.readLock().unlock();
+        if (result % 1000 == 0) {
+            lock.writeLock().lock();
+            value++;
+            lock.writeLock().unlock();
         }
+
+        return result;
+
+
     }
 }
