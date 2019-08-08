@@ -4,6 +4,7 @@ import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.State;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -29,29 +30,32 @@ public class IdGeneratorJmh {
 }
 
 class Synchronized {
-    int value;
+    AtomicInteger value = new AtomicInteger();
 
-    public synchronized int doWork() {
-        return value++;
+    public int doWork() {
+        value.incrementAndGet();
+        synchronized (this) {
+            return value.incrementAndGet();
+        }
     }
 }
 
 class RW {
-    int value;
+    AtomicInteger value = new AtomicInteger();
 
     ReadWriteLock lock = new ReentrantReadWriteLock();
 
     public int doWork() {
-        lock.readLock().lock();
-        int result = value++;
-
-        lock.readLock().unlock();
-
+        int result = value.incrementAndGet();
 
         if (result % 1000 == 0) {
             lock.writeLock().lock();
-            value++;
+            value.incrementAndGet();
             lock.writeLock().unlock();
+        } else {
+            lock.readLock().lock();
+            value.incrementAndGet();
+            lock.readLock().unlock();
         }
 
         return result;
