@@ -9,5 +9,6 @@
 # Benchmark mode: Throughput, ops/time
 
 Benchmark             Mode  Cnt         Score         Error  Units
-IdGeneratorJmh.rw    thrpt    5   5985311.009 ± 2374056.812  ops/s
-IdGeneratorJmh.sync  thrpt    5  20233414.782 ±  404077.471  ops/s
+IdGeneratorJmh.rw    thrpt    5   7105132.698 ± 3447491.275  ops/s
+IdGeneratorJmh.sync  thrpt    5  15612519.858 ± 2228658.080  ops/s
+
