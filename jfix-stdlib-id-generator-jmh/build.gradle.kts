@@ -12,7 +12,7 @@ plugins {
 jmh{
     warmupIterations = 1
     fork = 1
-    threads = 4
+    threads = 8
     duplicateClassesStrategy  = DuplicatesStrategy.WARN
 }
 

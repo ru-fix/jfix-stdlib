@@ -11,18 +11,13 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @State(Scope.Benchmark)
 public class IdGeneratorJmh {
-
-    final long timestamp = System.currentTimeMillis();
-
-    Synchronized sync = new Synchronized();
-
+    final Synchronized sync = new Synchronized();
     @Benchmark
     public int sync() {
         return sync.doWork();
     }
 
-    RW rw = new RW();
-
+    final RW rw = new RW();
     @Benchmark
     public int rw() {
         return rw.doWork();
@@ -32,20 +27,20 @@ public class IdGeneratorJmh {
 class Synchronized {
     AtomicInteger value = new AtomicInteger();
 
-    public int doWork() {
-        value.incrementAndGet();
+    int doWork() {
+        int result = value.incrementAndGet();
         synchronized (this) {
-            return value.incrementAndGet();
+            value.incrementAndGet();
         }
+        return result;
     }
 }
 
 class RW {
     AtomicInteger value = new AtomicInteger();
-
     ReadWriteLock lock = new ReentrantReadWriteLock();
 
-    public int doWork() {
+    int doWork() {
         int result = value.incrementAndGet();
 
         if (result % 1000 == 0) {
@@ -57,9 +52,6 @@ class RW {
             value.incrementAndGet();
             lock.readLock().unlock();
         }
-
         return result;
-
-
     }
 }
