@@ -130,3 +130,11 @@ Provides SocketChecker.
 ## SocketChecker
 
 Allows to check port availability by its port number. Allows to get random free port number in range from 30000 to 60000.
+
+## JMH
+Hot to run jmh tests for id generator: 
+```
+cd jfix-stdlib-id-generator-jmh
+gradle --stop
+gradle --no-daemon clean build jmh
+```
