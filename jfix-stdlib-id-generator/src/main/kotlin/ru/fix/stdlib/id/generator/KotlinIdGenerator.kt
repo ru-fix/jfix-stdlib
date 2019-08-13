@@ -7,42 +7,42 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 class KotlinIdGenerator {
 
     private val startOfTime: Long
-
     private val clock: Clock
-
-    private val counter: AtomicLong
-
     private val serverIdPart: Long
-
+    private val counter: AtomicLong
     private val idTime = AtomicLong()
-
     private val byteConfiguration: ByteConfiguration
-
     private val lock = ReentrantReadWriteLock()
-
 
     constructor(byteConfiguration: ByteConfiguration, startOfTime: Long, serverId: Long, clock: Clock, counter: AtomicLong) {
         this.byteConfiguration = byteConfiguration
-
         this.startOfTime = startOfTime;
-
         this.serverIdPart = serverId and byteConfiguration.serverPartMaxNumber
         this.clock = clock
         this.counter = counter
     }
 
-    private fun generateId(time: Long, counterValue: Long): Long {
-        val now = clock.millis()
-        //4
-        if (time < now) {
-            idTime.set(now)
-        }
-
-        // TODO: make pretty
-        val tsPart = ((idTime.get() - startOfTime) and byteConfiguration.timePartMaxNumber) shl byteConfiguration.serverPartBytes + byteConfiguration.counterPartBytes
+    private fun generateId(counterValue: Long): Long {
+        val tsPart = ((safeTime() - startOfTime) and byteConfiguration.timePartMaxNumber) shl byteConfiguration.serverPartBytes + byteConfiguration.counterPartBytes
         val counterPart = (counterValue and byteConfiguration.counterPartMaxNumber) shl byteConfiguration.serverPartBytes
 
         return tsPart or counterPart or serverIdPart
+    }
+
+    private fun resetCounterOverflowAndGenerateId(): Long {
+        counter.set(0)
+        idTime.incrementAndGet()
+        return generateId(counter.get())
+    }
+
+    private fun safeTime(): Long {
+        val now = clock.millis()
+        //4
+        if (idTime.get() < now) {
+            idTime.set(now)
+        }
+
+        return idTime.get()
     }
 
     /**
@@ -63,11 +63,10 @@ class KotlinIdGenerator {
         readLock.lock()
         try {
 
-            var time = idTime.get()
             var counterValue = counter.incrementAndGet()
 
             // 1
-            if (isCounterOverflow(counterValue)) {
+            if (counterIsOverflow(counterValue)) {
 
                 readLock.unlock()
                 writeLock.lock()
@@ -75,17 +74,16 @@ class KotlinIdGenerator {
                 try {
                     //2
                     counterValue = counter.get()
-                    if (isCounterOverflow(counterValue)) {
-                        time = resetOverflowAndGetSafeTime()
-                        id = generateId(time, counterValue)
+                    if (counterIsOverflow(counterValue)) {
+                        id = resetCounterOverflowAndGenerateId()
                     } else {
                         counterValue = counter.incrementAndGet()
                         //3
-                        if (isCounterOverflow(counterValue)) {
-                            time = resetOverflowAndGetSafeTime()
-                            id = generateId(time, counterValue)
+                        @Suppress("LiftReturnOrAssignment")
+                        if (counterIsOverflow(counterValue)) {
+                            id = resetCounterOverflowAndGenerateId()
                         } else {
-                            id = generateId(time, counterValue)
+                            id = generateId(counterValue)
                         }
                     }
                     readLock.lock()
@@ -94,7 +92,7 @@ class KotlinIdGenerator {
                 }
 
             } else {
-                id = generateId(time, counterValue)
+                id = generateId(counterValue)
             }
 
         } finally {
@@ -104,12 +102,22 @@ class KotlinIdGenerator {
         return id
     }
 
-    private fun resetOverflowAndGetSafeTime(): Long {
-        counter.set(0)
-        return idTime.incrementAndGet()
+    @Synchronized
+    fun nextId2(): Long {
+        var currentValue = counter.incrementAndGet()
+
+        return if (currentValue > byteConfiguration.counterPartMaxNumber) {
+            idTime.incrementAndGet()
+            counter.set(0)
+            currentValue = 0
+
+            generateId(currentValue)
+        } else {
+            generateId(currentValue)
+        }
     }
 
-    private fun isCounterOverflow(counterValue: Long): Boolean {
+    private fun counterIsOverflow(counterValue: Long): Boolean {
         return counterValue > byteConfiguration.counterPartMaxNumber
     }
 }
@@ -132,7 +140,12 @@ class ByteConfiguration(
             "All parts must be no more than 64 bytes, real $numberOfBytes"
         }
 
-        //TODO: проверка что значения не могут быть отрицательными
+        check(serverPartBytes > 0 && timePartBytes > 0 && counterPartBytes > 0) {
+            """Number of bytes must be greater than 0, 
+                |serverPartBytes=$serverPartBytes, 
+                |timePartBytes=$timePartBytes, 
+                |counterPartBytes=$counterPartBytes""".trimMargin()
+        }
 
         serverPartMaxNumber = maxNumberForBytes(serverPartBytes)
         timePartMaxNumber = maxNumberForBytes(timePartBytes)
