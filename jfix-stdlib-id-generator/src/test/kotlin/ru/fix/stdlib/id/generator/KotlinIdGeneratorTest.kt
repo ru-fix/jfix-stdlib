@@ -8,7 +8,6 @@ import java.time.Clock
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.locks.ReentrantReadWriteLock
 
 private const val TEST_SERVER_ID = 23L
 private const val TEST_COUNTER_VAL = 53L

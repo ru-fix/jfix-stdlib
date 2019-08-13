@@ -7,13 +7,14 @@ plugins {
 
 dependencies {
 
-    compile(Libs.kotlin_jdk8)
-    compile(Libs.kotlin_stdlib)
-    compile(Libs.kotlin_reflect)
+    implementation(Libs.kotlin_jdk8)
+    implementation(Libs.kotlin_stdlib)
+    implementation(Libs.kotlin_reflect)
 
-    testCompile(Libs.kotlin_jdk8)
-    testCompile(Libs.kotlin_stdlib)
-    testCompile(Libs.kotlin_reflect)
+    testImplementation(Libs.kotlin_jdk8)
+    testImplementation(Libs.kotlin_stdlib)
+    testImplementation(Libs.kotlin_reflect)
+    testImplementation(Libs.kotlinx_coroutines_core)
 
     testImplementation(Libs.junit_api)
     testImplementation(Libs.mockito)
