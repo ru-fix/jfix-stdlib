@@ -1,14 +1,16 @@
 object Vers {
-    val kotlin = "1.2.41"
+    val kotlin = "1.3.41"
     val sl4j = "1.7.25"
     val dokkav = "0.9.16"
-    val gradleReleasePlugin = "1.3.8"
+    val gradleReleasePlugin = "1.3.9"
     val junit = "5.2.0"
     val hamkrest = "1.4.2.2"
 
     val resilience4j = "0.13.0"
     val aggregatingProfiler = "1.4.7"
     val dynamicProperty = "1.0.5"
+
+    val jmh = "1.21"
 }
 
 object Libs {
@@ -37,4 +39,8 @@ object Libs {
     val aggregatingProfiler = "ru.fix:aggregating-profiler:${Vers.aggregatingProfiler}"
     val dynamicProperty = "ru.fix:dynamic-property-api:${Vers.dynamicProperty}"
 
+    val jmh_gradle_plugin = "me.champeau.gradle:jmh-gradle-plugin:0.5.0-rc-2"
+    val jmh = "org.openjdk.jmh:jmh-core:${Vers.jmh}"
+    val jmh_generator_ann = "org.openjdk.jmh:jmh-generator-annprocess:${Vers.jmh}"
+    val jmh_generator_bytecode = "org.openjdk.jmh:jmh-generator-bytecode:${Vers.jmh}"
 }

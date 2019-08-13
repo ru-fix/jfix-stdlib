@@ -30,6 +30,7 @@ buildscript {
         classpath(Libs.kotlin_stdlib)
         classpath(Libs.kotlin_jdk8)
         classpath(Libs.kotlin_reflect)
+        classpath(Libs.jmh_gradle_plugin)
     }
 }
 
@@ -110,8 +111,8 @@ subprojects {
                 }
             }
         }
-        (publications) {
-            "maven"(MavenPublication::class) {
+        publications {
+            register("maven", MavenPublication::class) {
                 from(components["java"])
 
                 artifact(sourcesJar)
