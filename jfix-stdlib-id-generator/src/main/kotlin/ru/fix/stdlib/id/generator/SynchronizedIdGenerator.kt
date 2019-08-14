@@ -10,11 +10,20 @@ class SynchronizedIdGenerator(
         counter: Long = 0L
 ) : IdGenerator {
 
-    private val serverIdPart: Long = serverId and bitsConfiguration.serverPartMaxNumber
+    private val serverIdPart: Long
     private var counter: Long
     private var idTime: Long = 0L
 
     init {
+        require(serverId <= bitsConfiguration.serverPartMask) {
+            "serverId cannot be greater than ${bitsConfiguration.serverPartMask}"
+        }
+
+        require(startOfTime < clock.millis()) {
+            "startOfTime cannot be greater than $startOfTime"
+        }
+
+        this.serverIdPart = serverId and bitsConfiguration.serverPartMask
         this.counter = counter
     }
 
@@ -31,21 +40,14 @@ class SynchronizedIdGenerator(
     }
 
     private fun generateId(counterValue: Long): Long {
-        val tsPart = ((safeTime() - startOfTime) and bitsConfiguration.timePartMaxNumber) shl bitsConfiguration.serverPartBits + bitsConfiguration.counterPartBits
-        val counterPart = (counterValue and bitsConfiguration.counterPartMaxNumber) shl bitsConfiguration.serverPartBits
+        catchUpIdTimeWithCurrentTimeIfNeeded()
+        val tsPart = ((idTime - startOfTime) and bitsConfiguration.timePartMask) shl bitsConfiguration.serverPartBits + bitsConfiguration.counterPartBits
+        val counterPart = (counterValue and bitsConfiguration.counterPartMask) shl bitsConfiguration.serverPartBits
 
         return tsPart or counterPart or serverIdPart
     }
 
-    private fun safeTime(): Long {
-        val now = clock.millis()
-        if (idTime < now) {
-            idTime = now
-        }
-        return idTime
-    }
+    private fun catchUpIdTimeWithCurrentTimeIfNeeded() = clock.millis().also { if (it > idTime) idTime = it }
 
-    private fun counterIsOverflow(counterValue: Long): Boolean {
-        return counterValue > bitsConfiguration.counterPartMaxNumber
-    }
+    private fun counterIsOverflow(counterValue: Long) = counterValue > bitsConfiguration.counterPartMask
 }

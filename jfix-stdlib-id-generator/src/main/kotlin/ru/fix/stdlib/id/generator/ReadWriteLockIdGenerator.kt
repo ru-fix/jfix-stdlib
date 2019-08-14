@@ -4,7 +4,7 @@ import java.time.Clock
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
-class ReadWriteLockIdGeneratorId(
+class ReadWriteLockIdGenerator(
         private val bitsConfiguration: BitsConfiguration,
         private val startOfTime: Long,
         serverId: Long,
@@ -12,13 +12,13 @@ class ReadWriteLockIdGeneratorId(
         private val counter: AtomicLong = AtomicLong(0)
 ) : IdGenerator {
 
-    private val serverIdPart: Long = serverId and bitsConfiguration.serverPartMaxNumber
+    private val serverIdPart: Long = serverId and bitsConfiguration.serverPartMask
     private val idTime = AtomicLong()
     private val lock = ReentrantReadWriteLock()
 
     private fun generateId(counterValue: Long): Long {
-        val tsPart = ((safeTime() - startOfTime) and bitsConfiguration.timePartMaxNumber) shl bitsConfiguration.serverPartBits + bitsConfiguration.counterPartBits
-        val counterPart = (counterValue and bitsConfiguration.counterPartMaxNumber) shl bitsConfiguration.serverPartBits
+        val tsPart = ((safeTime() - startOfTime) and bitsConfiguration.timePartMask) shl bitsConfiguration.serverPartBits + bitsConfiguration.counterPartBits
+        val counterPart = (counterValue and bitsConfiguration.counterPartMask) shl bitsConfiguration.serverPartBits
 
         return tsPart or counterPart or serverIdPart
     }
@@ -97,7 +97,7 @@ class ReadWriteLockIdGeneratorId(
     }
 
     private fun counterIsOverflow(counterValue: Long): Boolean {
-        return counterValue > bitsConfiguration.counterPartMaxNumber
+        return counterValue > bitsConfiguration.counterPartMask
     }
 }
 

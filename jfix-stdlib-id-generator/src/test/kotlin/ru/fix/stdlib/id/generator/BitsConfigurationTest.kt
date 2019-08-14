@@ -15,9 +15,9 @@ class BitsConfigurationTest {
         assertEquals(1, bitsPart.timePartBits)
         assertEquals(62, bitsPart.counterPartBits)
 
-        assertEquals(1, bitsPart.serverPartMaxNumber)
-        assertEquals(1, bitsPart.timePartMaxNumber)
-        assertEquals(4611686018427387903, bitsPart.counterPartMaxNumber)
+        assertEquals(1, bitsPart.serverPartMask)
+        assertEquals(1, bitsPart.timePartMask)
+        assertEquals(4611686018427387903, bitsPart.counterPartMask)
     }
 
     @Test

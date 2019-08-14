@@ -9,6 +9,7 @@ import org.junit.jupiter.api.RepeatedTest
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
+import java.lang.Exception
 import java.time.Clock
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
@@ -18,6 +19,24 @@ private const val TEST_SERVER_ID = 23L
 private const val TEST_COUNTER_VAL = 53L
 
 class IdGeneratorTest {
+
+    @Test
+    fun `error when create generator with server part value greater than max`() {
+        val bits = BitsConfiguration(serverPartBits = 2, timePartBits = 43, counterPartBits = 19)
+
+        assertThrows(Exception::class.java) {
+            SynchronizedIdGenerator(bits, 0, 16, Clock.systemUTC(), 1)
+        }
+    }
+
+    @Test
+    fun `error when create generator with start of time greater than current`() {
+        val bits = BitsConfiguration(serverPartBits = 2, timePartBits = 43, counterPartBits = 19)
+
+        assertThrows(Exception::class.java) {
+            SynchronizedIdGenerator(bits, System.currentTimeMillis() + 10000, 16, Clock.systemUTC(), 1)
+        }
+    }
 
     @Test
     fun `generate unique id`() {
@@ -159,9 +178,10 @@ class IdGeneratorTest {
 
         val clock = mock(Clock::class.java)
         `when`(clock.millis())
-                .thenReturn(1)
-                .thenReturn(1)
-                .thenReturn(8)
+                .thenReturn(1) // call when check startOfTime argument with current time
+                .thenReturn(1) // generate first id
+                .thenReturn(1) // generate second id
+                .thenReturn(8) // generate third id time changed
                 .thenThrow(RuntimeException("Fifth method call not mocked"))
 
         val idList = mutableListOf<Long>()
