@@ -1,6 +1,3 @@
-import org.gradle.kotlin.dsl.*
-
-
 plugins {
     java
     kotlin("jvm")
@@ -21,8 +18,6 @@ dependencies {
     testRuntimeOnly(Libs.junit_engine)
 
     testRuntimeOnly(Libs.slf4j_simple)
-
-
 }
 
 

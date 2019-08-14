@@ -56,7 +56,7 @@ val signingSecretKeyRingFile by envConfig()
 
 
 plugins {
-    kotlin("jvm") version "${Vers.kotlin}" apply false
+    kotlin("jvm") version Vers.kotlin apply false
     signing
     `maven-publish`
 }

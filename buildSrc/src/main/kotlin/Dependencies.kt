@@ -1,5 +1,6 @@
 object Vers {
-    val kotlin = "1.3.41"
+    val kotlin = "1.3.30"
+    val kotlin_coroutines = "1.2.1"
     val sl4j = "1.7.25"
     val dokkav = "0.9.16"
     val gradleReleasePlugin = "1.3.9"
@@ -17,6 +18,7 @@ object Libs {
     val kotlin_stdlib = "org.jetbrains.kotlin:kotlin-stdlib:${Vers.kotlin}"
     val kotlin_jdk8 = "org.jetbrains.kotlin:kotlin-stdlib-jdk8:${Vers.kotlin}"
     val kotlin_reflect = "org.jetbrains.kotlin:kotlin-reflect:${Vers.kotlin}"
+    val kotlinx_coroutines_core = "org.jetbrains.kotlinx:kotlinx-coroutines-core:${Vers.kotlin_coroutines}"
 
     val gradleReleasePlugin = "ru.fix:gradle-release-plugin:${Vers.gradleReleasePlugin}"
     val dokkaGradlePlugin = "org.jetbrains.dokka:dokka-gradle-plugin:${Vers.dokkav}"
