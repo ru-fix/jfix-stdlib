@@ -18,6 +18,9 @@ jmh{
 
 
 dependencies {
+
+    compile(project(":jfix-stdlib-id-generator"))
+
     /**
      * Runtime
      */

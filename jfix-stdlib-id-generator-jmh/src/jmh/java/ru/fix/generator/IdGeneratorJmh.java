@@ -1,57 +1,46 @@
-package ru.fix.aggregating.profiler.jmh;
+package ru.fix.generator;
 
 import org.openjdk.jmh.annotations.Benchmark;
+import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.State;
+import ru.fix.stdlib.id.generator.BitsConfiguration;
+import ru.fix.stdlib.id.generator.IdGenerator;
+import ru.fix.stdlib.id.generator.ReadWriteLockIdGenerator;
+import ru.fix.stdlib.id.generator.SynchronizedIdGenerator;
 
+import java.time.Clock;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 
 @State(Scope.Benchmark)
 public class IdGeneratorJmh {
-    final Synchronized sync = new Synchronized();
+    private final IdGenerator synchronizedIdGenerator = new SynchronizedIdGenerator(
+            new BitsConfiguration(11, 43, 10),
+            Clock.systemUTC().instant().toEpochMilli(),
+            1,
+            Clock.systemUTC(),
+            0
+    );
+
     @Benchmark
-    public int sync() {
-        return sync.doWork();
+    public long sync() {
+        return synchronizedIdGenerator.nextId();
     }
 
-    final RW rw = new RW();
+    private final IdGenerator rwLockIdGenerator = new ReadWriteLockIdGenerator(
+            new BitsConfiguration(11, 43, 10),
+            Clock.systemUTC().instant().toEpochMilli(),
+            1,
+            Clock.systemUTC(),
+            new AtomicLong(0)
+    );
+
     @Benchmark
-    public int rw() {
-        return rw.doWork();
-    }
-}
-
-class Synchronized {
-    AtomicInteger value = new AtomicInteger();
-
-    int doWork() {
-        int result = value.incrementAndGet();
-        synchronized (this) {
-            value.incrementAndGet();
-        }
-        return result;
-    }
-}
-
-class RW {
-    AtomicInteger value = new AtomicInteger();
-    ReadWriteLock lock = new ReentrantReadWriteLock();
-
-    int doWork() {
-        int result = value.incrementAndGet();
-
-        if (result % 1000 == 0) {
-            lock.writeLock().lock();
-            value.incrementAndGet();
-            lock.writeLock().unlock();
-        } else {
-            lock.readLock().lock();
-            value.incrementAndGet();
-            lock.readLock().unlock();
-        }
-        return result;
+    public long rw() {
+        return rwLockIdGenerator.nextId();
     }
 }
