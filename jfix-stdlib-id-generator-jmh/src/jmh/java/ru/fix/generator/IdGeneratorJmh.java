@@ -10,10 +10,7 @@ import ru.fix.stdlib.id.generator.ReadWriteLockIdGenerator;
 import ru.fix.stdlib.id.generator.SynchronizedIdGenerator;
 
 import java.time.Clock;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 
 @State(Scope.Benchmark)
