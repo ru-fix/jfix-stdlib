@@ -41,7 +41,7 @@ class SynchronizedIdGenerator(
 
     private fun generateId(counterValue: Long): Long {
         catchUpIdTimeWithCurrentTimeIfNeeded()
-        val tsPart = ((idTime - startOfTime) and bitsConfiguration.timePartMask) shl bitsConfiguration.serverPartBits + bitsConfiguration.counterPartBits
+        val tsPart = ((idTime - startOfTime) and bitsConfiguration.timePartMask) shl (bitsConfiguration.serverPartBits + bitsConfiguration.counterPartBits)
         val counterPart = (counterValue and bitsConfiguration.counterPartMask) shl bitsConfiguration.serverPartBits
 
         return tsPart or counterPart or serverIdPart
