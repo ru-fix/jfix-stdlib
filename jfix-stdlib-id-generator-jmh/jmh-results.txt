@@ -9,7 +9,5 @@
 # Benchmark mode: Throughput, ops/time
 
 
-IdGeneratorJmh.atomic                 thrpt   10  39 080 518.732 ± 511 023.661  ops/s
-IdGeneratorJmh.rw                     thrpt   10   5 282 233.880 ± 404 782.939  ops/s
-IdGeneratorJmh.sync                   thrpt   10   6 004 984.878 ± 244 682.207  ops/s
-IdGeneratorJmh.unsafeAtomicIncrement  thrpt   10  38 589 234.961 ± 199 683.711  ops/s
+IdGeneratorJmh.atomic                 thrpt   10  39 150 144.163 ± 338 896.656  ops/s
+IdGeneratorJmh.unsafeAtomicIncrement  thrpt   10  39 074 785.515 ± 101 378.575  ops/s

@@ -3,6 +3,9 @@ package ru.fix.stdlib.id.generator
 import java.time.Clock
 import java.util.concurrent.atomic.AtomicLong
 
+/**
+ * Generates growing unique identifier.
+ */
 class AtomicIdGenerator(
         private val bitsConfig: BitsConfiguration,
         private val startOfTime: Long,
@@ -46,7 +49,7 @@ class AtomicIdGenerator(
             val currentTime = clock.millis()
 
             if (idTime >= currentTime) {
-                return id.incrementAndGet()
+                return id.addAndGet(bitsConfig.serverPartMask+1)
             } else {
                 //Catch up id time with current time
                 val newIdValue = buildId(currentTime, 0)

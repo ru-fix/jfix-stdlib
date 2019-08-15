@@ -15,8 +15,7 @@ import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicLong
 
-private const val TEST_SERVER_ID = 23L
-private const val TEST_COUNTER_VAL = 53L
+
 
 class IdGeneratorTest {
 
@@ -25,7 +24,7 @@ class IdGeneratorTest {
         val bits = BitsConfiguration(serverPartBits = 2, timePartBits = 43, counterPartBits = 19)
 
         assertThrows(Exception::class.java) {
-            SynchronizedIdGenerator(bits, 0, 16, Clock.systemUTC(), 1)
+            AtomicIdGenerator(bits, 0, 16, Clock.systemUTC())
         }
     }
 
@@ -34,7 +33,7 @@ class IdGeneratorTest {
         val bits = BitsConfiguration(serverPartBits = 2, timePartBits = 43, counterPartBits = 19)
 
         assertThrows(Exception::class.java) {
-            SynchronizedIdGenerator(bits, System.currentTimeMillis() + 10000, 16, Clock.systemUTC(), 1)
+            AtomicIdGenerator(bits, System.currentTimeMillis() + 10000, 16, Clock.systemUTC())
         }
     }
 
@@ -48,10 +47,18 @@ class IdGeneratorTest {
         val clock = mock(Clock::class.java)
         `when`(clock.millis()).thenReturn(1450894554618L)
 
-        val counter = AtomicLong(TEST_COUNTER_VAL - 1)
-        val bits = BitsConfiguration(serverPartBits = 7, timePartBits = 43, counterPartBits = 13)
+        val TEST_SERVER_ID = 23L
+        val TEST_COUNTER_VAL = 53L
 
-        val generator = SynchronizedIdGenerator(bits, startOfTime, TEST_SERVER_ID, clock, counter.toLong())
+        val counter = AtomicLong(TEST_COUNTER_VAL - 1)
+        val bits = BitsConfiguration(timePartBits = 43, counterPartBits = 13, serverPartBits = 7)
+
+        val generator = AtomicIdGenerator(bits, startOfTime, TEST_SERVER_ID, clock)
+
+        //set counter value to TEST_COUNTER_VAL
+        for (i in 1 until TEST_COUNTER_VAL)
+            generator.nextId()
+
 
         val generatedId = generator.nextId()
 
@@ -91,7 +98,7 @@ class IdGeneratorTest {
 
         val idList = mutableListOf<Long>()
 
-        val bits = BitsConfiguration(serverPartBits = 19, timePartBits = 42, counterPartBits = 2)
+        val bits = BitsConfiguration(timePartBits = 42, counterPartBits = 2, serverPartBits = 19)
 
         // timestamp = 43 bit, value = [000 00000 00000 00000 00000 00000 00000 00000 00001]
         // counter   =  2 bit, value = [00], [01], [10], [11]
@@ -110,7 +117,7 @@ class IdGeneratorTest {
         // 0000 00000 00000 00000 00000 00000 00000 00000 01100 10000 00000 00000 00001
         // 0000 00000 00000 00000 00000 00000 00000 00000 01101 00000 00000 00000 00001
         // 0000 00000 00000 00000 00000 00000 00000 00000 01101 10000 00000 00000 00001
-        val idGenerator = SynchronizedIdGenerator(bits,0, 1, clock)
+        val idGenerator = AtomicIdGenerator(bits,0, 1, clock)
 
         for (i in 1..10) {
             idList.add(idGenerator.nextId())
@@ -141,7 +148,7 @@ class IdGeneratorTest {
         `when`(clock.millis()).thenReturn(1L)
         val bits = BitsConfiguration(serverPartBits = 19, timePartBits = 42, counterPartBits = 2)
 
-        val idGenerator = SynchronizedIdGenerator(bits,0, 1, clock)
+        val idGenerator = AtomicIdGenerator(bits,0, 1, clock)
 
         val jobs = mutableListOf<Deferred<List<Long>>>()
         for (job in 1..numberOfJobs) {
@@ -177,35 +184,39 @@ class IdGeneratorTest {
     fun `id time must be reset if current time is higher`() {
 
         val clock = mock(Clock::class.java)
-        `when`(clock.millis())
-                .thenReturn(1) // call when check startOfTime argument with current time
-                .thenReturn(1) // generate first id
-                .thenReturn(1) // generate second id
-                .thenReturn(8) // generate third id time changed
-                .thenThrow(RuntimeException("Fifth method call not mocked"))
+        val clockAnswer = AtomicLong()
+        `when`(clock.millis()).thenAnswer { clockAnswer.get() }
 
         val idList = mutableListOf<Long>()
 
-        val bits = BitsConfiguration(serverPartBits = 20, timePartBits = 42, counterPartBits = 1)
+        val bits = BitsConfiguration(timePartBits = 42, counterPartBits = 1, serverPartBits = 20)
+
+        clockAnswer.set(1)
 
         // timestamp = 42 bit, value = [000 00000 00000 00000 00000 00000 00000 00000 00001]
         // counter   =  1 bit, value = [0], [1]
         // server    = 20 bit, value = [00000 00000 00000 00001]
         //
+        // start with 1 in time and 1 in counter part
         // 0000 00000 00000 00000 00000 00000 00000 00000 00011 00000 00000 00000 00001
+        // increment counter lead to overflow that triggers increment time part
         // 0000 00000 00000 00000 00000 00000 00000 00000 00100 00000 00000 00000 00001
-        // 0000 00000 00000 00000 00000 00000 00000 00000 10001 00000 00000 00000 00001
-        val idGenerator = SynchronizedIdGenerator(bits,0, 1, clock)
+        // current time  update will update time part and reset counter
+        // 0000 00000 00000 00000 00000 00000 00000 00000 10000 00000 00000 00000 00001
+        val idGenerator = AtomicIdGenerator(bits,0, 1, clock)
 
-        for (i in 1..3) {
-            idList.add(idGenerator.nextId())
-        }
+        idList.add(idGenerator.nextId())
+        idList.add(idGenerator.nextId())
+
+        clockAnswer.set(8)
+        idList.add(idGenerator.nextId())
+
 
         assertEquals(idList.toSet().size, 3) { "Generated values are not unique" }
 
         assertEquals("0000000000000000000000000000000000000000001100000000000000000001", toBinaryString(idList[0]))
         assertEquals("0000000000000000000000000000000000000000010000000000000000000001", toBinaryString(idList[1]))
-        assertEquals("0000000000000000000000000000000000000001000100000000000000000001", toBinaryString(idList[2]))
+        assertEquals("0000000000000000000000000000000000000001000000000000000000000001", toBinaryString(idList[2]))
     }
 
     private fun toBinaryString(value: Long): String {
