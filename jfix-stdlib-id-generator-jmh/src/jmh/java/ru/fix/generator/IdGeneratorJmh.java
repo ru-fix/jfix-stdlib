@@ -12,36 +12,10 @@ import java.util.concurrent.atomic.AtomicLong;
 @State(Scope.Benchmark)
 public class IdGeneratorJmh {
 
-    final long START_OF_TIME = Clock.systemUTC().instant().toEpochMilli();
-    final BitsConfiguration bitsConfig = new BitsConfiguration(11, 43, 10);
+    private final long START_OF_TIME = Clock.systemUTC().instant().toEpochMilli();
+    private final BitsConfiguration bitsConfig = new BitsConfiguration(11, 43, 10);
 
-    final IdGenerator synchronizedIdGenerator = new SynchronizedIdGenerator(
-            bitsConfig,
-            START_OF_TIME,
-            1,
-            Clock.systemUTC(),
-            0
-    );
-
-    @Benchmark
-    public long sync() {
-        return synchronizedIdGenerator.nextId();
-    }
-
-    final IdGenerator rwLockIdGenerator = new ReadWriteLockIdGenerator(
-            bitsConfig,
-            START_OF_TIME,
-            1,
-            Clock.systemUTC(),
-            new AtomicLong(0)
-    );
-
-    @Benchmark
-    public long rw() {
-        return rwLockIdGenerator.nextId();
-    }
-
-    final IdGenerator atomicGenerator = new AtomicIdGenerator(
+    private final IdGenerator atomicGenerator = new AtomicIdGenerator(
             bitsConfig,
             START_OF_TIME,
             1,
