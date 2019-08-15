@@ -5,23 +5,23 @@ package ru.fix.stdlib.id.generator
  *
  * Total count of bits cannot be greater than 64
  *
- * @param serverPartBits number of bits for server part
  * @param timePartBits number of bits for time part
  * @param counterPartBits number of bits for counter part
+ * @param serverPartBits number of bits for server part
  *
  * @see IdGenerator
  * @see SynchronizedIdGenerator
  * @see ReadWriteLockIdGenerator
+ * @see AtomicIdGenerator
  */
 class BitsConfiguration(
-        val serverPartBits: Int,
         val timePartBits: Int,
-        val counterPartBits: Int
+        val counterPartBits: Int,
+        val serverPartBits: Int
 ) {
-
-    val serverPartMask: Long
     val timePartMask: Long
     val counterPartMask: Long
+    val serverPartMask: Long
 
     init {
 
@@ -38,11 +38,11 @@ class BitsConfiguration(
                 |counterPartBits=$counterPartBits""".trimMargin()
         }
 
-        serverPartMask = maxNumberForBits(serverPartBits)
-        timePartMask = maxNumberForBits(timePartBits)
-        counterPartMask = maxNumberForBits(counterPartBits)
+        serverPartMask = maskForBits(serverPartBits)
+        timePartMask = maskForBits(timePartBits)
+        counterPartMask = maskForBits(counterPartBits)
 
     }
 
-    private fun maxNumberForBits(bits: Int): Long  = (1L shl bits) - 1
+    private fun maskForBits(bits: Int): Long  = (1L shl bits) - 1
 }
