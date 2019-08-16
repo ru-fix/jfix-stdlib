@@ -29,13 +29,12 @@ class AtomicIdGenerator(
             }
         }
 
-        id = AtomicLong(buildId(clock.millis(), 0))
+        id = AtomicLong(buildIdForNewTimestampWithZeroCounter(clock.millis()))
     }
 
-    private fun buildId(timeValue: Long, counterValue: Long): Long {
+    private fun buildIdForNewTimestampWithZeroCounter(timeValue: Long): Long {
         val timestampPart = ((timeValue - startOfTime) and bitsConfig.timePartMask) shl (bitsConfig.serverPartBits + bitsConfig.counterPartBits)
-        val counterPart = (counterValue and bitsConfig.counterPartMask) shl bitsConfig.serverPartBits
-        return timestampPart or counterPart or serverIdPart
+        return timestampPart or serverIdPart
     }
 
     private fun timeFromId(idValue: Long): Long =
@@ -75,7 +74,7 @@ class AtomicIdGenerator(
                 return id.addAndGet(bitsConfig.serverPartMask + 1)
             } else {
                 //Catch up id time with current time
-                val newIdValue = buildId(currentTime, 0)
+                val newIdValue = buildIdForNewTimestampWithZeroCounter(currentTime)
 
                 //TODO: replace with compareAndExchange during update to JDK11
                 if (id.compareAndSet(idValue, newIdValue)) {
