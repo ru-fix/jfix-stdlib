@@ -32,24 +32,47 @@ class AtomicIdGenerator(
         id = AtomicLong(buildId(clock.millis(), 0))
     }
 
-    private fun buildId(timeValue: Long, counterValue: Long): Long{
-            val timestampPart = ((timeValue - startOfTime) and bitsConfig.timePartMask) shl (bitsConfig.serverPartBits + bitsConfig.counterPartBits)
-            val counterPart = (counterValue and bitsConfig.counterPartMask) shl bitsConfig.serverPartBits
-            return timestampPart or counterPart or serverIdPart
+    private fun buildId(timeValue: Long, counterValue: Long): Long {
+        val timestampPart = ((timeValue - startOfTime) and bitsConfig.timePartMask) shl (bitsConfig.serverPartBits + bitsConfig.counterPartBits)
+        val counterPart = (counterValue and bitsConfig.counterPartMask) shl bitsConfig.serverPartBits
+        return timestampPart or counterPart or serverIdPart
     }
 
     private fun timeFromId(idValue: Long): Long =
-        startOfTime + (idValue shr (bitsConfig.serverPartBits + bitsConfig.counterPartBits)) and bitsConfig.timePartMask
+            startOfTime + (idValue shr (bitsConfig.serverPartBits + bitsConfig.counterPartBits)) and bitsConfig.timePartMask
 
 
     override fun nextId(): Long {
-        while(true) {
+        /*
+        Example:
+        time part: 3 bit 0b110
+        counter part 2 bit 0b11
+        server_id 3 bit 0b101
+        previously generated identifier inside atomic id: 0b110_11_101
+
+        1. If time part of id is same as current time, e.g. 0b110 then we will increment counter part:
+            0b110_11_101
+            +
+            ob000_01_000
+            =
+            0b111_00_101
+        Counter overflow will lead to increment of time part to the future.
+
+        2. If time part of id is lower than current time, then we will update whole id by CAS
+            0b110_11_101
+            CAS TO
+            0b111_00_101
+            =
+            0b111_00_101
+        */
+
+        while (true) {
             val idValue = id.get()
             val idTime = timeFromId(idValue)
             val currentTime = clock.millis()
 
             if (idTime >= currentTime) {
-                return id.addAndGet(bitsConfig.serverPartMask+1)
+                return id.addAndGet(bitsConfig.serverPartMask + 1)
             } else {
                 //Catch up id time with current time
                 val newIdValue = buildId(currentTime, 0)
