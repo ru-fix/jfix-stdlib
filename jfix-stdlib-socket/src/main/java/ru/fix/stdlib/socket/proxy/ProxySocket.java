@@ -9,7 +9,6 @@ import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -20,16 +19,21 @@ public class ProxySocket implements AutoCloseable {
     private String destinationHost;
     private int destinationPort;
     private int sourcePort;
+    private ExecutorService executorService;
 
     private ServerSocket sourceServerSocket;
     private AtomicBoolean isShutdown = new AtomicBoolean();
 
-    private ExecutorService executorService = Executors.newFixedThreadPool(25);
-
-    public ProxySocket(String destinationHost, int destinationPort, int sourcePort) throws IOException {
+    /**
+     * @param executorService provide thread pools for connections. Each connection to the socket
+     *                        use separate thread from executorService's thread pool
+     */
+    public ProxySocket(String destinationHost, int destinationPort,
+                       int sourcePort, ExecutorService executorService) throws IOException {
         this.destinationHost = destinationHost;
         this.destinationPort = destinationPort;
         this.sourcePort = sourcePort;
+        this.executorService = executorService;
 
         start();
     }
@@ -79,13 +83,16 @@ public class ProxySocket implements AutoCloseable {
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() throws InterruptedException {
+        try {
+            sourceServerSocket.close();
+            executorService.shutdown();
+        } catch (IOException e) {
+            executorService.awaitTermination(5, TimeUnit.SECONDS);
+            log.error("Error while trying to close socket: " + e);
+            log.info("Force executor service termination");
+            executorService.shutdownNow();
+        }
         isShutdown.set(true);
-
-        executorService.shutdown();
-        executorService.awaitTermination(5, TimeUnit.SECONDS);
-        executorService.shutdownNow();
-
-        sourceServerSocket.close();
     }
 }
