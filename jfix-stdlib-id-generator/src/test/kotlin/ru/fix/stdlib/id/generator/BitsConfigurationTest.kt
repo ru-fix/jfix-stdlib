@@ -9,15 +9,15 @@ class BitsConfigurationTest {
     @Test
     fun `create bits configuration`() {
 
-        val bitsPart = BitsConfiguration(1, 1, 62)
+        val bitsPart = BitsConfiguration(1, 62, 1)
 
-        assertEquals(1, bitsPart.serverPartBits)
         assertEquals(1, bitsPart.timePartBits)
         assertEquals(62, bitsPart.counterPartBits)
+        assertEquals(1, bitsPart.serverPartBits)
 
-        assertEquals(1, bitsPart.serverPartMask)
         assertEquals(1, bitsPart.timePartMask)
         assertEquals(4611686018427387903, bitsPart.counterPartMask)
+        assertEquals(1, bitsPart.serverPartMask)
     }
 
     @Test

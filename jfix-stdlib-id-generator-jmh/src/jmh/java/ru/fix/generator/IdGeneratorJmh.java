@@ -1,13 +1,9 @@
 package ru.fix.generator;
 
 import org.openjdk.jmh.annotations.Benchmark;
-import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.State;
-import ru.fix.stdlib.id.generator.BitsConfiguration;
-import ru.fix.stdlib.id.generator.IdGenerator;
-import ru.fix.stdlib.id.generator.ReadWriteLockIdGenerator;
-import ru.fix.stdlib.id.generator.SynchronizedIdGenerator;
+import ru.fix.stdlib.id.generator.*;
 
 import java.time.Clock;
 import java.util.concurrent.atomic.AtomicLong;
@@ -15,29 +11,34 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @State(Scope.Benchmark)
 public class IdGeneratorJmh {
-    private final IdGenerator synchronizedIdGenerator = new SynchronizedIdGenerator(
-            new BitsConfiguration(11, 43, 10),
-            Clock.systemUTC().instant().toEpochMilli(),
+
+    private final long START_OF_TIME = Clock.systemUTC().instant().toEpochMilli();
+    private final BitsConfiguration bitsConfig = new BitsConfiguration(11, 43, 10);
+
+    private final IdGenerator atomicGenerator = new AtomicIdGenerator(
+            bitsConfig,
+            START_OF_TIME,
             1,
-            Clock.systemUTC(),
-            0
-    );
+            Clock.systemUTC());
+
 
     @Benchmark
-    public long sync() {
-        return synchronizedIdGenerator.nextId();
+    public long atomic() {
+        return atomicGenerator.nextId();
     }
 
-    private final IdGenerator rwLockIdGenerator = new ReadWriteLockIdGenerator(
-            new BitsConfiguration(11, 43, 10),
-            Clock.systemUTC().instant().toEpochMilli(),
-            1,
-            Clock.systemUTC(),
-            new AtomicLong(0)
-    );
+    final IdGenerator unsafeAtomicIncGenerator = new IdGenerator() {
+        AtomicLong counter = new AtomicLong();
+        @Override
+        public long nextId() {
+            return (System.currentTimeMillis() << (bitsConfig.getCounterPartBits() + bitsConfig.getServerPartBits())) |
+                    (counter.incrementAndGet() & bitsConfig.getCounterPartMask() << bitsConfig.getServerPartBits()) |
+                    1 & bitsConfig.getServerPartMask();
+        }
+    };
 
     @Benchmark
-    public long rw() {
-        return rwLockIdGenerator.nextId();
+    public long unsafeAtomicIncrement() {
+        return atomicGenerator.nextId();
     }
 }

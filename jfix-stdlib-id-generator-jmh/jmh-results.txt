@@ -2,13 +2,12 @@
 # VM version: JDK 11.0.2, Java HotSpot(TM) 64-Bit Server VM, 11.0.2+9-LTS
 # VM invoker: /usr/lib/jvm/java-11-oracle/bin/java
 # VM options: <none>
-# Warmup: 1 iterations, 10 s each
+# Warmup: 2 iterations, 10 s each
 # Measurement: 5 iterations, 10 s each
 # Timeout: 10 min per iteration
-# Threads: 4 threads, will synchronize iterations
+# Threads: 8 threads, will synchronize iterations
 # Benchmark mode: Throughput, ops/time
 
-Benchmark             Mode  Cnt         Score         Error  Units
-IdGeneratorJmh.rw    thrpt    5   7105132.698 ± 3447491.275  ops/s
-IdGeneratorJmh.sync  thrpt    5  15612519.858 ± 2228658.080  ops/s
 
+IdGeneratorJmh.atomic                 thrpt   10  39 150 144.163 ± 338 896.656  ops/s
+IdGeneratorJmh.unsafeAtomicIncrement  thrpt   10  39 074 785.515 ± 101 378.575  ops/s
