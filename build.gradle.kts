@@ -58,8 +58,8 @@ plugins {
     kotlin("jvm") version Vers.kotlin apply false
     signing
     `maven-publish`
-    id(Libs.nexus_staging_plugin) version Vers.nexus_staging_plugin
-    id(Libs.nexus_publish_plugin) version Vers.nexus_publish_plugin
+    id("io.codearte.nexus-staging") version "0.21.0"
+    id("de.marcphilipp.nexus-publish") version "0.3.0"
 }
 
 apply {
