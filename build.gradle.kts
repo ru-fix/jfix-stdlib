@@ -46,7 +46,7 @@ plugins {
     kotlin("jvm") version Vers.kotlin apply false
     signing
     `maven-publish`
-    id(Libs.nexus_staging_plugin) version "0.21.0"
+    id(Libs.nexus_staging_plugin) version "0.21.0" apply false
     id(Libs.nexus_publish_plugin) version "0.3.0" apply true
 }
 
@@ -54,8 +54,8 @@ nexusStaging{
     packageGroup = "ru.fix"
     username = "$repositoryUser"
     password = "$repositoryPassword"
-    numberOfRetries = 40
-    delayBetweenRetriesInMillis = 2_000
+    numberOfRetries = 50
+    delayBetweenRetriesInMillis = 3_000
 }
 
 
@@ -74,6 +74,7 @@ subprojects {
         plugin("signing")
         plugin("java")
         plugin("org.jetbrains.dokka")
+        plugin(Libs.nexus_staging_plugin)
         plugin(Libs.nexus_publish_plugin)
     }
 
