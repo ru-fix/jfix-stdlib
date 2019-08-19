@@ -46,11 +46,11 @@ plugins {
     kotlin("jvm") version Vers.kotlin apply false
     signing
     `maven-publish`
-    id(Libs.nexus_staging_plugin) version "0.21.0" apply false
+    id(Libs.nexus_staging_plugin) version "0.21.0"
     id(Libs.nexus_publish_plugin) version "0.3.0" apply true
 }
 
-nexusStaging{
+nexusStaging {
     packageGroup = "ru.fix"
     username = "$repositoryUser"
     password = "$repositoryPassword"
