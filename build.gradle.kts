@@ -74,7 +74,6 @@ subprojects {
         plugin("signing")
         plugin("java")
         plugin("org.jetbrains.dokka")
-        plugin(Libs.nexus_staging_plugin)
         plugin(Libs.nexus_publish_plugin)
     }
 
