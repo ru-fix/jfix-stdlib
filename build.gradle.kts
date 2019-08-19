@@ -99,52 +99,53 @@ subprojects {
     }
 
 
-    publishing {
-        repositories {
-            maven {
-                url = uri("$repositoryUrl")
-                if (url.scheme.startsWith("http", true)) {
-                    credentials {
-                        username = "$repositoryUser"
-                        password = "$repositoryPassword"
+    project.afterEvaluate {
+        publishing {
+            repositories {
+                maven {
+                    url = uri("$repositoryUrl")
+                    if (url.scheme.startsWith("http", true)) {
+                        credentials {
+                            username = "$repositoryUser"
+                            password = "$repositoryPassword"
+                        }
                     }
                 }
             }
-        }
-        publications {
-            register("maven", MavenPublication::class) {
-                from(components["java"])
+            publications {
+                register("maven", MavenPublication::class) {
+                    from(components["java"])
 
-                artifact(sourcesJar)
-                artifact(dokkaJar)
+                    artifact(sourcesJar)
+                    artifact(dokkaJar)
 
-                pom {
-                    name.set("${project.group}:${project.name}")
-                    description.set("jfix-stdlib provides common functionality that enhance usability of standard jvm. ")
-                    url.set("https://github.com/ru-fix/jfix-stdlib")
-                    licenses {
-                        license {
-                            name.set("The Apache License, Version 2.0")
-                            url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
-                        }
-                    }
-                    developers {
-                        developer {
-                            id.set("swarmshine")
-                            name.set("Kamil Asfandiyarov")
-                            url.set("https://github.com/swarmshine")
-                        }
-                    }
-                    scm {
+                    pom {
+                        name.set("${project.group}:${project.name}")
+                        description.set("jfix-stdlib provides common functionality that enhance usability of standard jvm. ")
                         url.set("https://github.com/ru-fix/jfix-stdlib")
-                        connection.set("https://github.com/ru-fix/jfix-stdlib.git")
-                        developerConnection.set("https://github.com/ru-fix/jfix-stdlib.git")
+                        licenses {
+                            license {
+                                name.set("The Apache License, Version 2.0")
+                                url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
+                            }
+                        }
+                        developers {
+                            developer {
+                                id.set("swarmshine")
+                                name.set("Kamil Asfandiyarov")
+                                url.set("https://github.com/swarmshine")
+                            }
+                        }
+                        scm {
+                            url.set("https://github.com/ru-fix/jfix-stdlib")
+                            connection.set("https://github.com/ru-fix/jfix-stdlib.git")
+                            developerConnection.set("https://github.com/ru-fix/jfix-stdlib.git")
+                        }
                     }
                 }
             }
         }
     }
-
     configure<SigningExtension> {
 
         if (!signingKeyId.isNullOrEmpty()) {
