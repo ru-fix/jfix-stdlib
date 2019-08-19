@@ -57,7 +57,7 @@ public class ProxySocket implements AutoCloseable {
                                         streamToServer.flush();
                                     }
                                 } catch (IOException e) {
-                                    log.error("Failed to flush to dest {}", e);
+                                    log.error("Failed to flush to dest", e);
                                 }
                             });
 
@@ -84,14 +84,15 @@ public class ProxySocket implements AutoCloseable {
 
     @Override
     public void close() {
+        isShutdown.set(true);
+
         try {
             sourceServerSocket.close();
-            shutdownExecutorService();
         } catch (IOException e) {
             log.error("Error while trying to close socket: " + e);
-            shutdownExecutorService();
         }
-        isShutdown.set(true);
+
+        shutdownExecutorService();
     }
 
     private void shutdownExecutorService() {
