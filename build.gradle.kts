@@ -47,11 +47,7 @@ plugins {
     signing
     `maven-publish`
     id(Libs.nexus_staging_plugin) version "0.21.0"
-    id(Libs.nexus_publish_plugin) version "0.3.0" apply false
-}
-
-apply {
-    plugin("ru.fix.gradle.release")
+    id(Libs.nexus_publish_plugin) version "0.3.0" apply true
 }
 
 nexusStaging{
@@ -59,6 +55,19 @@ nexusStaging{
     username = "$repositoryUser"
     password = "$repositoryPassword"
 }
+
+configure<NexusPublishExtension>{
+    repositories {
+        sonatype()
+    }
+}
+
+apply {
+    plugin("ru.fix.gradle.release")
+    plugin(Libs.nexus_publish_plugin)
+}
+
+
 
 subprojects {
     group = "ru.fix"
@@ -68,7 +77,6 @@ subprojects {
         plugin("signing")
         plugin("java")
         plugin("org.jetbrains.dokka")
-        plugin(Libs.nexus_publish_plugin)
     }
 
     repositories {
@@ -158,12 +166,6 @@ subprojects {
         }
 
         sign(publishing.publications)
-    }
-
-    configure<NexusPublishExtension>{
-        repositories {
-            sonatype()
-        }
     }
 
     tasks {
