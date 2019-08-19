@@ -12,6 +12,9 @@ object Vers {
     val dynamicProperty = "1.0.5"
 
     val jmh = "1.21"
+
+    val nexus_staging_plugin = "0.21.0"
+    val nexus_publish_plugin = "0.3.0"
 }
 
 object Libs {
@@ -45,4 +48,7 @@ object Libs {
     val jmh = "org.openjdk.jmh:jmh-core:${Vers.jmh}"
     val jmh_generator_ann = "org.openjdk.jmh:jmh-generator-annprocess:${Vers.jmh}"
     val jmh_generator_bytecode = "org.openjdk.jmh:jmh-generator-bytecode:${Vers.jmh}"
+
+    val nexus_staging_plugin = "io.codearte.nexus-staging"
+    val nexus_publish_plugin =  "de.marcphilipp.nexus-publish"
 }
