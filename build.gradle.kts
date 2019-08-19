@@ -21,7 +21,6 @@ import kotlin.reflect.KProperty
 buildscript {
     repositories {
         jcenter()
-        gradlePluginPortal()
         mavenCentral()
     }
     dependencies {
@@ -59,10 +58,18 @@ plugins {
     kotlin("jvm") version Vers.kotlin apply false
     signing
     `maven-publish`
+    id("io.codearte.nexus-staging") version "0.21.0"
+    id("de.marcphilipp.nexus-publish") version "0.3.0"
 }
 
 apply {
     plugin("ru.fix.gradle.release")
+}
+
+nexusStaging{
+    packageGroup = "ru.fix"
+    username = "$repositoryUser"
+    password = "$repositoryPassword"
 }
 
 subprojects {
@@ -181,4 +188,6 @@ subprojects {
             }
         }
     }
+
+
 }
