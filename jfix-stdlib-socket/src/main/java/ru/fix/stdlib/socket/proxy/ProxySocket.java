@@ -83,16 +83,27 @@ public class ProxySocket implements AutoCloseable {
     }
 
     @Override
-    public void close() throws InterruptedException {
+    public void close() {
         try {
             sourceServerSocket.close();
-            executorService.shutdown();
+            shutdownExecutorService();
         } catch (IOException e) {
-            executorService.awaitTermination(5, TimeUnit.SECONDS);
             log.error("Error while trying to close socket: " + e);
-            log.info("Force executor service termination");
-            executorService.shutdownNow();
+            shutdownExecutorService();
         }
         isShutdown.set(true);
+    }
+
+    private void shutdownExecutorService() {
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            log.error("Error occurred when await termination", e);
+            executorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }
