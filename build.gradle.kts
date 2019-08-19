@@ -54,17 +54,14 @@ nexusStaging{
     packageGroup = "ru.fix"
     username = "$repositoryUser"
     password = "$repositoryPassword"
+    numberOfRetries = 40
+    delayBetweenRetriesInMillis = 2_000
 }
 
-configure<NexusPublishExtension>{
-    repositories {
-        sonatype()
-    }
-}
+
 
 apply {
     plugin("ru.fix.gradle.release")
-    plugin(Libs.nexus_publish_plugin)
 }
 
 
@@ -77,6 +74,7 @@ subprojects {
         plugin("signing")
         plugin("java")
         plugin("org.jetbrains.dokka")
+        plugin(Libs.nexus_publish_plugin)
     }
 
     repositories {
@@ -166,6 +164,12 @@ subprojects {
         }
 
         sign(publishing.publications)
+    }
+
+    configure<NexusPublishExtension>{
+        repositories {
+            sonatype()
+        }
     }
 
     tasks {
