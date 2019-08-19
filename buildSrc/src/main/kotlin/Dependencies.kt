@@ -45,4 +45,7 @@ object Libs {
     val jmh = "org.openjdk.jmh:jmh-core:${Vers.jmh}"
     val jmh_generator_ann = "org.openjdk.jmh:jmh-generator-annprocess:${Vers.jmh}"
     val jmh_generator_bytecode = "org.openjdk.jmh:jmh-generator-bytecode:${Vers.jmh}"
+
+    val nexus_staging_plugin = "io.codearte.nexus-staging"
+    val nexus_publish_plugin = "de.marcphilipp.nexus-publish"
 }

@@ -46,8 +46,8 @@ plugins {
     kotlin("jvm") version Vers.kotlin apply false
     signing
     `maven-publish`
-    id("io.codearte.nexus-staging") version "0.21.0"
-    id("de.marcphilipp.nexus-publish") version "0.3.0"
+    id(Libs.nexus_staging_plugin) version "0.21.0"
+    id(Libs.nexus_publish_plugin) version "0.3.0" apply false
 }
 
 apply {
@@ -60,12 +60,6 @@ nexusStaging{
     password = "$repositoryPassword"
 }
 
-configure<NexusPublishExtension>{
-    repositories {
-        sonatype()
-    }
-}
-
 subprojects {
     group = "ru.fix"
 
@@ -74,6 +68,7 @@ subprojects {
         plugin("signing")
         plugin("java")
         plugin("org.jetbrains.dokka")
+        plugin(Libs.nexus_publish_plugin)
     }
 
     repositories {
@@ -163,6 +158,12 @@ subprojects {
         }
 
         sign(publishing.publications)
+    }
+
+    configure<NexusPublishExtension>{
+        repositories {
+            sonatype()
+        }
     }
 
     tasks {
