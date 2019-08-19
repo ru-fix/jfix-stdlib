@@ -58,11 +58,6 @@ nexusStaging {
     delayBetweenRetriesInMillis = 3_000
 }
 
-configure<NexusPublishExtension>{
-    repositories {
-        sonatype()
-    }
-}
 
 
 apply {
@@ -171,7 +166,11 @@ subprojects {
         sign(publishing.publications)
     }
 
-
+    configure<NexusPublishExtension>{
+        repositories {
+            sonatype()
+        }
+    }
 
     tasks {
         withType<KotlinCompile> {
