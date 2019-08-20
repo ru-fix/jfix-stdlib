@@ -46,7 +46,7 @@ plugins {
     signing
     `maven-publish`
     id(Libs.nexus_staging_plugin) version "0.21.0"
-    id(Libs.nexus_publish_plugin) version "0.3.0" apply false
+    id(Libs.nexus_publish_plugin) version "0.3.0"
 }
 
 nexusStaging {
@@ -55,6 +55,12 @@ nexusStaging {
     password = "$repositoryPassword"
     numberOfRetries = 50
     delayBetweenRetriesInMillis = 3_000
+}
+
+nexusPublishing{
+    repositories{
+        sonatype()
+    }
 }
 
 
@@ -184,11 +190,6 @@ subprojects {
             }
         }
 
-        withType<PublishToMavenRepository>(){
-            doLast {
-                logger.info("RepositoryId: ${nexusStaging.stagingRepositoryId.get()}")
-            }
-        }
     }
 
 
