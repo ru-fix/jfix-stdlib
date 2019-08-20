@@ -1,4 +1,3 @@
-import de.marcphilipp.gradle.nexus.NexusPublishExtension
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.api.tasks.testing.logging.TestLogEvent
 import org.jetbrains.dokka.gradle.DokkaTask
@@ -47,7 +46,7 @@ plugins {
     signing
     `maven-publish`
     id(Libs.nexus_staging_plugin) version "0.21.0"
-    id(Libs.nexus_publish_plugin) version "0.3.0" apply true
+    id(Libs.nexus_publish_plugin) version "0.3.0" apply false
 }
 
 nexusStaging {
@@ -57,7 +56,6 @@ nexusStaging {
     numberOfRetries = 50
     delayBetweenRetriesInMillis = 3_000
 }
-
 
 
 apply {
@@ -88,7 +86,7 @@ subprojects {
         from("src/main/kotlin")
     }
 
-    val dokkaTask by tasks.creating(DokkaTask::class){
+    val dokkaTask by tasks.creating(DokkaTask::class) {
         outputFormat = "javadoc"
         outputDirectory = "$buildDir/dokka"
     }
@@ -166,11 +164,8 @@ subprojects {
         sign(publishing.publications)
     }
 
-    configure<NexusPublishExtension>{
-        repositories {
-            sonatype()
-        }
-    }
+
+
 
     tasks {
         withType<KotlinCompile> {
@@ -186,6 +181,12 @@ subprojects {
                 events(TestLogEvent.PASSED, TestLogEvent.FAILED, TestLogEvent.SKIPPED)
                 showStandardStreams = true
                 exceptionFormat = TestExceptionFormat.FULL
+            }
+        }
+
+        withType<PublishToMavenRepository>(){
+            doLast {
+                logger.info("RepositoryId: ${nexusStaging.stagingRepositoryId.get()}")
             }
         }
     }
