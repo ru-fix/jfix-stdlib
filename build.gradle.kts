@@ -2,6 +2,7 @@ import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.api.tasks.testing.logging.TestLogEvent
 import org.jetbrains.dokka.gradle.DokkaTask
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.net.URI
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 
@@ -59,7 +60,15 @@ nexusStaging {
 
 nexusPublishing{
     repositories{
-        sonatype()
+        create("Repo"){
+            val uri = URI("$repositoryUrl")
+            nexusUrl.set(uri)
+            useStaging.set(true)
+            if (uri.scheme.startsWith("http", true)) {
+                username.set("$repositoryUser")
+                password.set("$repositoryPassword")
+            }
+        }
     }
 }
 
@@ -107,17 +116,17 @@ subprojects {
 
     project.afterEvaluate {
         publishing {
-            repositories {
-                maven {
-                    url = uri("$repositoryUrl")
-                    if (url.scheme.startsWith("http", true)) {
-                        credentials {
-                            username = "$repositoryUser"
-                            password = "$repositoryPassword"
-                        }
-                    }
-                }
-            }
+//            repositories {
+//                maven {
+//                    url = uri("$repositoryUrl")
+//                    if (url.scheme.startsWith("http", true)) {
+//                        credentials {
+//                            username = "$repositoryUser"
+//                            password = "$repositoryPassword"
+//                        }
+//                    }
+//                }
+//            }
             publications {
                 register("maven", MavenPublication::class) {
                     from(components["java"])
