@@ -1,8 +1,8 @@
+import de.marcphilipp.gradle.nexus.NexusPublishExtension
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.api.tasks.testing.logging.TestLogEvent
 import org.jetbrains.dokka.gradle.DokkaTask
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-import java.net.URI
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 
@@ -46,37 +46,22 @@ plugins {
     kotlin("jvm") version Vers.kotlin apply false
     signing
     `maven-publish`
+    id(Libs.nexus_publish_plugin) version "0.3.0" apply false
     id(Libs.nexus_staging_plugin) version "0.21.0"
-    id(Libs.nexus_publish_plugin) version "0.3.0"
 }
 
 nexusStaging {
     packageGroup = "ru.fix"
+    stagingProfileId = "1f0730098fd259"
     username = "$repositoryUser"
     password = "$repositoryPassword"
     numberOfRetries = 50
     delayBetweenRetriesInMillis = 3_000
 }
 
-nexusPublishing{
-    repositories{
-        create("Repo"){
-            val uri = URI("$repositoryUrl")
-            nexusUrl.set(uri)
-            useStaging.set(true)
-            if (uri.scheme.startsWith("http", true)) {
-                username.set("$repositoryUser")
-                password.set("$repositoryPassword")
-            }
-        }
-    }
-}
-
-
 apply {
     plugin("ru.fix.gradle.release")
 }
-
 
 
 subprojects {
@@ -113,22 +98,35 @@ subprojects {
         dependsOn(dokkaTask)
     }
 
+    configure<NexusPublishExtension>{
+        repositories{
+            sonatype{
+                username.set("$repositoryUser")
+                password.set("$repositoryPassword")
+                useStaging.set(true)
+                stagingProfileId.set("1f0730098fd259")
+            }
+        }
+    }
 
     project.afterEvaluate {
         publishing {
-//            repositories {
-//                maven {
-//                    url = uri("$repositoryUrl")
-//                    if (url.scheme.startsWith("http", true)) {
-//                        credentials {
-//                            username = "$repositoryUser"
-//                            password = "$repositoryPassword"
-//                        }
-//                    }
-//                }
-//            }
+
             publications {
-                register("maven", MavenPublication::class) {
+                //Internal repository setup
+                repositories {
+                    maven {
+                        url = uri("$repositoryUrl")
+                        if (url.scheme.startsWith("http", true)) {
+                            credentials {
+                                username = "$repositoryUser"
+                                password = "$repositoryPassword"
+                            }
+                        }
+                    }
+                }
+
+                create<MavenPublication>("maven"){
                     from(components["java"])
 
                     artifact(sourcesJar)
@@ -161,6 +159,7 @@ subprojects {
             }
         }
     }
+
     configure<SigningExtension> {
 
         if (!signingKeyId.isNullOrEmpty()) {
@@ -178,8 +177,6 @@ subprojects {
 
         sign(publishing.publications)
     }
-
-
 
 
     tasks {
@@ -200,6 +197,4 @@ subprojects {
         }
 
     }
-
-
 }
