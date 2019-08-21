@@ -6,9 +6,6 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 
-val githubProjectName = "jfix-stdlib"
-
-
 buildscript {
     repositories {
         jcenter()
@@ -24,6 +21,13 @@ buildscript {
     }
 }
 
+plugins {
+    kotlin("jvm") version Vers.kotlin apply false
+    signing
+    `maven-publish`
+    id(Libs.nexus_publish_plugin) version "0.3.0" apply false
+    id(Libs.nexus_staging_plugin) version "0.21.0"
+}
 
 /**
  * Project configuration by properties and environment
@@ -43,15 +47,6 @@ val repositoryUrl by envConfig()
 val signingKeyId by envConfig()
 val signingPassword by envConfig()
 val signingSecretKeyRingFile by envConfig()
-
-
-plugins {
-    kotlin("jvm") version Vers.kotlin apply false
-    signing
-    `maven-publish`
-    id(Libs.nexus_publish_plugin) version "0.3.0" apply false
-    id(Libs.nexus_staging_plugin) version "0.21.0"
-}
 
 nexusStaging {
     packageGroup = "ru.fix"
@@ -100,9 +95,9 @@ subprojects {
         dependsOn(dokkaTask)
     }
 
-    configure<NexusPublishExtension>{
-        repositories{
-            sonatype{
+    configure<NexusPublishExtension> {
+        repositories {
+            sonatype {
                 username.set("$repositoryUser")
                 password.set("$repositoryPassword")
                 useStaging.set(true)
@@ -128,7 +123,7 @@ subprojects {
                     }
                 }
 
-                create<MavenPublication>("maven"){
+                create<MavenPublication>("maven") {
                     from(components["java"])
 
                     artifact(sourcesJar)
@@ -137,7 +132,7 @@ subprojects {
                     pom {
                         name.set("${project.group}:${project.name}")
                         description.set("https://github.com/ru-fix/")
-                        url.set("https://github.com/ru-fix/$githubProjectName")
+                        url.set("https://github.com/ru-fix/${rootProject.name}")
                         licenses {
                             license {
                                 name.set("The Apache License, Version 2.0")
@@ -152,9 +147,9 @@ subprojects {
                             }
                         }
                         scm {
-                            url.set("https://github.com/ru-fix/$githubProjectName")
-                            connection.set("https://github.com/ru-fix/$githubProjectName.git")
-                            developerConnection.set("https://github.com/ru-fix/$githubProjectName.git")
+                            url.set("https://github.com/ru-fix/${rootProject.name}")
+                            connection.set("https://github.com/ru-fix/${rootProject.name}.git")
+                            developerConnection.set("https://github.com/ru-fix/${rootProject.name}.git")
                         }
                     }
                 }
