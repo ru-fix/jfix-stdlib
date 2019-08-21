@@ -145,6 +145,11 @@ subprojects {
                             }
                         }
                         developers {
+                            developer {
+                                id.set("JFix Team")
+                                name.set("JFix Team")
+                                url.set("https://github.com/ru-fix/")
+                            }
                         }
                         scm {
                             url.set("https://github.com/ru-fix/$githubProjectName")
