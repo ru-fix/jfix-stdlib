@@ -6,6 +6,9 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 
+val githubProjectName = "jfix-stdlib"
+
+
 buildscript {
     repositories {
         jcenter()
@@ -62,7 +65,6 @@ nexusStaging {
 apply {
     plugin("ru.fix.gradle.release")
 }
-
 
 subprojects {
     group = "ru.fix"
@@ -134,56 +136,42 @@ subprojects {
 
                     pom {
                         name.set("${project.group}:${project.name}")
-                        description.set("jfix-stdlib provides common functionality that enhance usability of standard jvm. ")
-                        url.set("https://github.com/ru-fix/jfix-stdlib")
+                        url.set("https://github.com/ru-fix/$githubProjectName")
                         licenses {
                             license {
                                 name.set("The Apache License, Version 2.0")
                                 url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
                             }
                         }
-                        developers {
-                            developer {
-                                id.set("swarmshine")
-                                name.set("Kamil Asfandiyarov")
-                                url.set("https://github.com/swarmshine")
-                            }
-                        }
                         scm {
-                            url.set("https://github.com/ru-fix/jfix-stdlib")
-                            connection.set("https://github.com/ru-fix/jfix-stdlib.git")
-                            developerConnection.set("https://github.com/ru-fix/jfix-stdlib.git")
+                            url.set("https://github.com/ru-fix/$githubProjectName")
+                            connection.set("https://github.com/ru-fix/$githubProjectName.git")
+                            developerConnection.set("https://github.com/ru-fix/$githubProjectName.git")
                         }
                     }
                 }
-            }
-        }
-    }
+            }//publications
+        }//publishing
+    }//afterEvaluate
 
     configure<SigningExtension> {
-
         if (!signingKeyId.isNullOrEmpty()) {
             project.ext["signing.keyId"] = signingKeyId
             project.ext["signing.password"] = signingPassword
             project.ext["signing.secretKeyRingFile"] = signingSecretKeyRingFile
-
             logger.info("Signing key id provided. Sign artifacts for $project.")
-
             isRequired = true
         } else {
-            logger.warn("${project.name}: Signing key not provided. Disable signing for  $project.")
+            logger.info("${project.name}: Signing key not provided. Disable signing for  $project.")
             isRequired = false
         }
-
         sign(publishing.publications)
     }
-
 
     tasks {
         withType<KotlinCompile> {
             kotlinOptions.jvmTarget = "1.8"
         }
-
         withType<Test> {
             useJUnitPlatform()
 
@@ -195,6 +183,5 @@ subprojects {
                 exceptionFormat = TestExceptionFormat.FULL
             }
         }
-
     }
 }
