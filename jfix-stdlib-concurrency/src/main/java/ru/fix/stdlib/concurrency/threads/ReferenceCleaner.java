@@ -23,11 +23,18 @@ public class ReferenceCleaner {
     private ReferenceCleaner() {
     }
 
-    private static ReferenceQueue referenceQueue = new ReferenceQueue();
-    private static Set<CleanableWeakReference> createdReferences = Collections.newSetFromMap(new ConcurrentHashMap<>());
-    private static AtomicReference<Thread> cleanerThread = new AtomicReference<>(null);
+    private static final ReferenceCleaner INSTANCE = new ReferenceCleaner();
 
-    private static final class Reference<T, M> extends WeakReference<T> implements CleanableWeakReference {
+    public static ReferenceCleaner getInstance(){
+        return INSTANCE;
+    }
+
+
+    private ReferenceQueue referenceQueue = new ReferenceQueue();
+    private Set<CleanableWeakReference> createdReferences = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private AtomicReference<Thread> cleanerThread = new AtomicReference<>(null);
+
+    private final class Reference<T, M> extends WeakReference<T> implements CleanableWeakReference {
         private final M meta;
         private final BiConsumer<CleanableWeakReference, M> cleaner;
 
@@ -51,7 +58,7 @@ public class ReferenceCleaner {
      * @param <M>            metadata type
      * @return reference interface that allows access to referent or cancel cleaning request
      */
-    public static <T, M> CleanableWeakReference<T> register(T referent, M metadata, BiConsumer<CleanableWeakReference<T>, M> cleaningAction) {
+    public <T, M> CleanableWeakReference<T> register(T referent, M metadata, BiConsumer<CleanableWeakReference<T>, M> cleaningAction) {
         final Reference ref = new Reference(referent, metadata, cleaningAction, referenceQueue);
 
         createdReferences.add(ref);
@@ -60,7 +67,7 @@ public class ReferenceCleaner {
         return ref;
     }
 
-    private static void ensureThreadExist() {
+    private void ensureThreadExist() {
         if (cleanerThread.get() != null) return;
 
         CleanerThread newThread = new CleanerThread((thread)-> cleanerThread.compareAndSet(thread, null));
@@ -70,7 +77,7 @@ public class ReferenceCleaner {
         }
     }
 
-    private static class CleanerThread extends Thread {
+    private class CleanerThread extends Thread {
         private final Consumer<CleanerThread> onShutdown;
 
         public CleanerThread(Consumer<CleanerThread> onShutdown) {

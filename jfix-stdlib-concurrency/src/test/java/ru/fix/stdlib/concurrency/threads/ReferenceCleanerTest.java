@@ -15,14 +15,17 @@ import static org.junit.jupiter.api.Assertions.*;
 
 
 public class ReferenceCleanerTest {
+
     static final Duration GENERATE_GARBAGE_TIMEOUT = Duration.of(10, ChronoUnit.SECONDS);
+
+    static final ReferenceCleaner referenceCleaner = ReferenceCleaner.getInstance();
 
     @Test
     void two_sequential_cleans_leads_to_thread_restart() throws Exception {
         AtomicInteger disposedObjects = new AtomicInteger(0);
 
         Object myObject1 = new Object();
-        ReferenceCleaner.register(myObject1, null, (ref, meta) -> disposedObjects.incrementAndGet());
+        referenceCleaner.register(myObject1, null, (ref, meta) -> disposedObjects.incrementAndGet());
         myObject1 = null;
 
         assertTrue(
@@ -32,7 +35,7 @@ public class ReferenceCleanerTest {
 
 
         Object myObject2 = new Object();
-        ReferenceCleaner.register(myObject2, null, (ref, meta) -> disposedObjects.incrementAndGet());
+        referenceCleaner.register(myObject2, null, (ref, meta) -> disposedObjects.incrementAndGet());
         myObject2 = null;
 
         assertTrue(
@@ -54,7 +57,7 @@ public class ReferenceCleanerTest {
 
         for (int i = 0; i < countOfObjects; i++) {
             Object myObject = new Object();
-            CleanableWeakReference<Object> ref = ReferenceCleaner.register(myObject, null, (r, m) -> disposedObjects.incrementAndGet());
+            CleanableWeakReference<Object> ref = referenceCleaner.register(myObject, null, (r, m) -> disposedObjects.incrementAndGet());
             if(keepWeakReference){
                 refs.add(ref);
             }
@@ -72,7 +75,7 @@ public class ReferenceCleanerTest {
     @Test
     void access_object_scheduled_for_cleaning() throws Exception {
         Object myObject = new Object();
-        CleanableWeakReference<Object> ref = ReferenceCleaner.register(myObject, 0, (r, m) -> {
+        CleanableWeakReference<Object> ref = referenceCleaner.register(myObject, 0, (r, m) -> {
         });
         assertEquals(myObject, ref.get());
 
@@ -89,7 +92,7 @@ public class ReferenceCleanerTest {
         Object myObject = new Object();
         AtomicBoolean disposed = new AtomicBoolean(false);
 
-        CleanableWeakReference<Object> ref = ReferenceCleaner.register(myObject, 0, (r, m) -> disposed.set(true));
+        CleanableWeakReference<Object> ref = referenceCleaner.register(myObject, 0, (r, m) -> disposed.set(true));
         assertEquals(myObject, ref.get());
 
         ref.cancelCleaningOrder();
