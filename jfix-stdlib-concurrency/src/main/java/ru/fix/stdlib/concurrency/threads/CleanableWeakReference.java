@@ -6,7 +6,7 @@ import java.lang.ref.WeakReference;
  * Reference to the referent object.
  * Behaves as {@link WeakReference}
  */
-interface CleanableWeakReference<T>{
+public interface CleanableWeakReference<T>{
     /**
      * @return referent if it steal reachable or null
      */
