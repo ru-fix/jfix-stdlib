@@ -1,38 +1,113 @@
 package ru.fix.stdlib.concurrency.threads;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 
 public class ReferenceCleanerTest {
+    static final Duration GENERATE_GARBAGE_TIMEOUT = Duration.of(10, ChronoUnit.SECONDS);
 
     @Test
-    void usage() throws Exception {
-        AtomicBoolean disposedFlag = new AtomicBoolean(false);
+    void two_sequential_cleans_leads_to_thread_restart() throws Exception {
+        AtomicInteger disposedObjects = new AtomicInteger(0);
 
-        System.out.println("Create 100KB weakly reachable objects and register in cleaner");
-        ArrayList<Object> data = new ArrayList<>();
-        for (int i = 0; i < 100; i++) {
-            int[] obj = new int[1024];
-            Arrays.fill(obj, i);
-            data.add(obj);
-            ReferenceCleaner.register(obj, i, meta -> disposedFlag.set(true));
+        Object myObject1 = new Object();
+        ReferenceCleaner.register(myObject1, null, (ref, meta) -> disposedObjects.incrementAndGet());
+        myObject1 = null;
+
+        assertTrue(
+                generateGarbageAndWaitForConditioin(GENERATE_GARBAGE_TIMEOUT, () -> disposedObjects.get() == 1),
+                () -> "disposed objects: " + disposedObjects.get()
+        );
+
+
+        Object myObject2 = new Object();
+        ReferenceCleaner.register(myObject2, null, (ref, meta) -> disposedObjects.incrementAndGet());
+        myObject2 = null;
+
+        assertTrue(
+                generateGarbageAndWaitForConditioin(GENERATE_GARBAGE_TIMEOUT, () -> disposedObjects.get() == 2),
+                () -> "disposed objects: " + disposedObjects.get()
+        );
+    }
+
+    @CsvSource({
+            "1, false",
+            "5, false",
+            "1, true",
+            "15, true",
+    })
+    @ParameterizedTest
+    void cleaning_action_invoked_when_object_became_unreachable(int countOfObjects, boolean keepWeakReference) throws Exception {
+        AtomicInteger disposedObjects = new AtomicInteger(0);
+        ArrayList<CleanableWeakReference> refs = new ArrayList<>();
+
+        for (int i = 0; i < countOfObjects; i++) {
+            Object myObject = new Object();
+            CleanableWeakReference<Object> ref = ReferenceCleaner.register(myObject, null, (r, m) -> disposedObjects.incrementAndGet());
+            if(keepWeakReference){
+                refs.add(ref);
+            }
+            myObject = null;
         }
-        data.clear();
 
-        System.out.println("Create garbage and wait for cleaning event");
+        System.out.println("Create garbage and wait for " + countOfObjects + " cleaning events");
+        assertTrue(
+                generateGarbageAndWaitForConditioin(GENERATE_GARBAGE_TIMEOUT, () -> disposedObjects.get() == countOfObjects),
+                () -> "disposed objects: " + disposedObjects.get()
+        );
+    }
 
+
+    @Test
+    void access_object_scheduled_for_cleaning() throws Exception {
+        Object myObject = new Object();
+        CleanableWeakReference<Object> ref = ReferenceCleaner.register(myObject, 0, (r, m) -> {
+        });
+        assertEquals(myObject, ref.get());
+
+        myObject = null;
+
+        System.out.println("Create garbage and wait for reference became unreachable");
+        assertTrue(
+                generateGarbageAndWaitForConditioin(GENERATE_GARBAGE_TIMEOUT, () -> ref.get() == null)
+        );
+    }
+
+    @Test
+    void cancel_cleaning() throws Exception {
+        Object myObject = new Object();
+        AtomicBoolean disposed = new AtomicBoolean(false);
+
+        CleanableWeakReference<Object> ref = ReferenceCleaner.register(myObject, 0, (r, m) -> disposed.set(true));
+        assertEquals(myObject, ref.get());
+
+        ref.cancelCleaningOrder();
+        myObject = null;
+        System.out.println("Create garbage and wait for reference became unreachable");
+        assertTrue(
+                generateGarbageAndWaitForConditioin(GENERATE_GARBAGE_TIMEOUT, () -> ref.get() == null)
+        );
+        assertFalse(disposed.get());
+    }
+
+    private boolean generateGarbageAndWaitForConditioin(Duration duration, Supplier<Boolean> condition) throws Exception {
+        ArrayList<Object> data = new ArrayList<>();
         long start = System.currentTimeMillis();
-        while (!disposedFlag.get() || System.currentTimeMillis() - start > Duration.of(2, ChronoUnit.SECONDS).toMillis()) {
+
+        while (!condition.get() || System.currentTimeMillis() - start > duration.toMillis()) {
             System.out.println("Running time: " + Duration.of(System.currentTimeMillis() - start, ChronoUnit.MILLIS));
-            System.out.println("Occupied memory: " + (Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory())/1024 + " Kb");
+            System.out.println("Occupied memory: " + (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 + " Kb");
 
             for (int mb = 0; mb < 10; mb++) {
                 for (int kb = 0; kb < 1024; kb++) {
@@ -43,6 +118,8 @@ public class ReferenceCleanerTest {
             data.clear();
             Thread.sleep(1000);
         }
-        assertTrue(disposedFlag.get());
+        return condition.get();
     }
+
+
 }

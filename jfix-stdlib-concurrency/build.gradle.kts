@@ -15,6 +15,7 @@ dependencies {
     testImplementation(Libs.hamkrest)
     testImplementation(Libs.awaitility)
     testImplementation(Libs.junit_api)
+    testImplementation(Libs.junit_parametri)
     testRuntimeOnly(Libs.junit_engine)
     testRuntimeOnly(Libs.slf4j_simple)
 

@@ -1,11 +1,15 @@
 package ru.fix.stdlib.concurrency.threads;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
@@ -14,69 +18,88 @@ import java.util.function.Consumer;
  * {@link Thread} will be created on demand and destroyed if there no reference left to clean.
  */
 public class ReferenceCleaner {
-
-    interface CleaningOrder{
-        /**
-         * @return true if cleaning order canceled and {@link ReferenceCleaner} will not clean reference.
-         *         false if {@link ReferenceCleaner} already acquired reference for cleaning
-         *         and will invoke cleaning action in nearest future
-         */
-        boolean cancel();
-    }
+    private static final Logger log = LoggerFactory.getLogger(ReschedulableScheduler.class);
 
     private ReferenceCleaner() {
     }
 
     private static ReferenceQueue referenceQueue = new ReferenceQueue();
-    private static Set<DisposableWeakReference> createdReferences = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private static Set<CleanableWeakReference> createdReferences = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private static AtomicReference<Thread> cleanerThread = new AtomicReference<>(null);
 
-    private static final class DisposableWeakReference<T, M> extends WeakReference<T> {
-        public final M meta;
-        public final Consumer<M> cleaner;
+    private static final class Reference<T, M> extends WeakReference<T> implements CleanableWeakReference {
+        private final M meta;
+        private final BiConsumer<CleanableWeakReference, M> cleaner;
 
-        public DisposableWeakReference(T referent, M meta, Consumer<M> cleaner, ReferenceQueue referenceQueue) {
+        private Reference(T referent, M meta, BiConsumer<CleanableWeakReference, M> cleaner, ReferenceQueue referenceQueue) {
             super(referent, referenceQueue);
             this.meta = meta;
             this.cleaner = cleaner;
         }
+
+        @Override
+        public boolean cancelCleaningOrder() {
+            return createdReferences.remove(this);
+        }
     }
 
-    public static <T, M> CleaningOrder register(T referent, M disposerMetadata, Consumer<M> disposer) {
-        final DisposableWeakReference ref = new DisposableWeakReference(referent, disposerMetadata, disposer, referenceQueue);
-
-        CleaningOrder order = () -> createdReferences.remove(ref);
+    /**
+     * @param referent       object which reachability will be tracked through {@link ReferenceQueue}
+     * @param metadata       will be passed to cleaning action
+     * @param cleaningAction will be invoked when referent become weakly reachable
+     * @param <T>            referent type
+     * @param <M>            metadata type
+     * @return reference interface that allows access to referent or cancel cleaning request
+     */
+    public static <T, M> CleanableWeakReference<T> register(T referent, M metadata, BiConsumer<CleanableWeakReference, M> cleaningAction) {
+        final Reference ref = new Reference(referent, metadata, cleaningAction, referenceQueue);
 
         createdReferences.add(ref);
         ensureThreadExist();
 
-        return order;
+        return ref;
     }
 
     private static void ensureThreadExist() {
         if (cleanerThread.get() != null) return;
 
-        Thread newThread = new Thread(ReferenceCleaner::processQueueRoutine);
-        newThread.setName(ReferenceCleaner.class.getName());
-        newThread.setDaemon(true);
+        CleanerThread newThread = new CleanerThread((thread)-> cleanerThread.compareAndSet(thread, null));
 
         if (cleanerThread.compareAndSet(null, newThread)) {
             newThread.start();
         }
     }
 
-    private static void processQueueRoutine() {
-        try {
-            while (!createdReferences.isEmpty() && !Thread.interrupted()) {
-                DisposableWeakReference ref = (DisposableWeakReference) referenceQueue.remove();
-                if (ref != null) {
-                    if(createdReferences.remove(ref)) {
-                        ref.cleaner.accept(ref.meta);
+    private static class CleanerThread extends Thread {
+        private final Consumer<CleanerThread> onShutdown;
+
+        public CleanerThread(Consumer<CleanerThread> onShutdown) {
+            setName(ReferenceCleaner.class.getName());
+            setDaemon(true);
+            this.onShutdown = onShutdown;
+        }
+
+        @Override
+        public void run() {
+            try {
+                while (!createdReferences.isEmpty() && !Thread.interrupted()) {
+                    try {
+                        Reference ref = (Reference) referenceQueue.remove();
+                        if (ref != null) {
+                            if (createdReferences.remove(ref)) {
+                                ref.cleaner.accept(ref, ref.meta);
+                            }
+                        }
+                    } catch (InterruptedException thr) {
+                        //on interruption return
+                        return;
+                    } catch (Throwable thr) {
+                        log.error("ReferenceCleaner cleaning thread failed", thr);
                     }
                 }
+            } finally {
+                onShutdown.accept(this);
             }
-        } catch (InterruptedException thr) {
-            //on interruption return
         }
     }
 }
