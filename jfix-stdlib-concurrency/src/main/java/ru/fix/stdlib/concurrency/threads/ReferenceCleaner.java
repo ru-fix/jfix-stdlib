@@ -51,7 +51,7 @@ public class ReferenceCleaner {
      * @param <M>            metadata type
      * @return reference interface that allows access to referent or cancel cleaning request
      */
-    public static <T, M> CleanableWeakReference<T> register(T referent, M metadata, BiConsumer<CleanableWeakReference, M> cleaningAction) {
+    public static <T, M> CleanableWeakReference<T> register(T referent, M metadata, BiConsumer<CleanableWeakReference<T>, M> cleaningAction) {
         final Reference ref = new Reference(referent, metadata, cleaningAction, referenceQueue);
 
         createdReferences.add(ref);
