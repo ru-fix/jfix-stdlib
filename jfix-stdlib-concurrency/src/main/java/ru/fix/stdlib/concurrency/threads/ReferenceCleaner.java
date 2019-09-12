@@ -4,6 +4,7 @@ import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
 import java.util.Collections;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -14,6 +15,15 @@ import java.util.function.Consumer;
  * {@link Thread} will be created on demand and destroyed if there no reference left to clean.
  */
 public class ReferenceCleaner {
+
+    interface CleaningOrder{
+        /**
+         * @return true if cleaning order canceled and {@link ReferenceCleaner} will not clean reference.
+         *         false if {@link ReferenceCleaner} already acquired reference for cleaning
+         *         and will invoke cleaning action in nearest future
+         */
+        boolean cancel();
+    }
 
     private ReferenceCleaner() {
     }
@@ -33,8 +43,16 @@ public class ReferenceCleaner {
         }
     }
 
-    public static <T, M> void register(T referent, M disposerMetadata, Consumer<M> disposer) {
-        createdReferences.add(new DisposableWeakReference(referent, disposerMetadata, disposer, referenceQueue));
+    public static <T, M> CompletableFuture<Void> register(T referent, M disposerMetadata, Consumer<M> disposer) {
+        final DisposableWeakReference ref = new DisposableWeakReference(referent, disposerMetadata, disposer, referenceQueue);
+
+        CleaningOrder order = new CleaningOrder() {
+            @Override
+            public boolean cancel() {
+                return createdReferences.remove(ref);
+            }
+        };
+        createdReferences.add(ref);
         ensureThreadExist();
     }
 
@@ -55,8 +73,9 @@ public class ReferenceCleaner {
             while (!createdReferences.isEmpty() && !Thread.interrupted()) {
                 DisposableWeakReference ref = (DisposableWeakReference) referenceQueue.remove();
                 if (ref != null) {
-                    createdReferences.remove(ref);
-                    ref.cleaner.accept(ref.meta);
+                    if(createdReferences.remove(ref)) {
+                        ref.cleaner.accept(ref.meta);
+                    }
                 }
             }
         } catch (InterruptedException thr) {
