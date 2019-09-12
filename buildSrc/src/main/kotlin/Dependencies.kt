@@ -48,4 +48,6 @@ object Libs {
 
     val nexus_staging_plugin = "io.codearte.nexus-staging"
     val nexus_publish_plugin = "de.marcphilipp.nexus-publish"
+
+    val awaitility = "org.awaitility:awaitility:4.0.1"
 }

@@ -5,19 +5,20 @@ plugins {
 
 dependencies {
 
-    compile(Libs.dynamicProperty)
-    compile(Libs.aggregatingProfiler)
+    api(Libs.dynamicProperty)
+    api(Libs.aggregatingProfiler)
 
-    testCompile(Libs.kotlin_jdk8)
-    testCompile(Libs.kotlin_stdlib)
-    testCompile(Libs.kotlin_reflect)
+    implementation(Libs.kotlin_jdk8)
+    implementation(Libs.kotlin_stdlib)
+    implementation(Libs.kotlin_reflect)
 
-    testCompile(Libs.hamkrest)
-
+    testImplementation(Libs.hamkrest)
+    testImplementation(Libs.awaitility)
     testImplementation(Libs.junit_api)
     testRuntimeOnly(Libs.junit_engine)
-
     testRuntimeOnly(Libs.slf4j_simple)
+
+
 }
 
 
