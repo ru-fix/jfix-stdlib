@@ -4,7 +4,6 @@ import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
 import java.util.Collections;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -43,17 +42,15 @@ public class ReferenceCleaner {
         }
     }
 
-    public static <T, M> CompletableFuture<Void> register(T referent, M disposerMetadata, Consumer<M> disposer) {
+    public static <T, M> CleaningOrder register(T referent, M disposerMetadata, Consumer<M> disposer) {
         final DisposableWeakReference ref = new DisposableWeakReference(referent, disposerMetadata, disposer, referenceQueue);
 
-        CleaningOrder order = new CleaningOrder() {
-            @Override
-            public boolean cancel() {
-                return createdReferences.remove(ref);
-            }
-        };
+        CleaningOrder order = () -> createdReferences.remove(ref);
+
         createdReferences.add(ref);
         ensureThreadExist();
+
+        return order;
     }
 
     private static void ensureThreadExist() {
