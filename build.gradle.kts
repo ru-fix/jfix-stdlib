@@ -109,7 +109,7 @@ subprojects {
                 stagingProfileId.set("1f0730098fd259")
             }
         }
-        clientTimeout.set(Duration.of(2, ChronoUnit.MINUTES))
+        clientTimeout.set(Duration.of(3, ChronoUnit.MINUTES))
     }
 
 
