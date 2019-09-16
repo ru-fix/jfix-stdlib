@@ -12,8 +12,8 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath(Libs.gradleReleasePlugin)
-        classpath(Libs.dokkaGradlePlugin)
+        classpath(Libs.gradle_release_plugin)
+        classpath(Libs.dokka_gradle_plugin)
         classpath(Libs.kotlin_stdlib)
         classpath(Libs.kotlin_jdk8)
         classpath(Libs.kotlin_reflect)
@@ -25,7 +25,7 @@ plugins {
     kotlin("jvm") version Vers.kotlin apply false
     signing
     `maven-publish`
-    id(Libs.nexus_publish_plugin) version "0.3.0" apply false
+    id(Libs.nexus_publish_plugin) version "0.3.1" apply false
     id(Libs.nexus_staging_plugin) version "0.21.1"
 }
 

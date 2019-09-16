@@ -1,6 +1,3 @@
-import org.gradle.kotlin.dsl.*
-
-
 plugins {
     java
     kotlin("jvm")
@@ -8,9 +5,9 @@ plugins {
 
 dependencies {
 
-    compile(Libs.resilience4jRatelimiter)
-    compile(Libs.dynamicProperty)
-    compile(Libs.aggregatingProfiler)
+    compile(Libs.resilience4j_rate_limiter)
+    compile(Libs.dynamic_property)
+    compile(Libs.aggregating_profiler)
 
     testCompile(Libs.kotlin_jdk8)
     testCompile(Libs.kotlin_stdlib)

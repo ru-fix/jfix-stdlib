@@ -3,7 +3,7 @@ object Vers {
     val kotlin_coroutines = "1.2.1"
     val sl4j = "1.7.25"
     val dokkav = "0.9.18"
-    val gradleReleasePlugin = "1.3.9"
+    val gradle_release_plugin = "1.3.9"
     val junit = "5.2.0"
     val hamkrest = "1.4.2.2"
 
@@ -20,8 +20,8 @@ object Libs {
     val kotlin_reflect = "org.jetbrains.kotlin:kotlin-reflect:${Vers.kotlin}"
     val kotlinx_coroutines_core = "org.jetbrains.kotlinx:kotlinx-coroutines-core:${Vers.kotlin_coroutines}"
 
-    val gradleReleasePlugin = "ru.fix:gradle-release-plugin:${Vers.gradleReleasePlugin}"
-    val dokkaGradlePlugin = "org.jetbrains.dokka:dokka-gradle-plugin:${Vers.dokkav}"
+    val gradle_release_plugin = "ru.fix:gradle-release-plugin:${Vers.gradle_release_plugin}"
+    val dokka_gradle_plugin = "org.jetbrains.dokka:dokka-gradle-plugin:${Vers.dokkav}"
 
     val slf4j_api = "org.slf4j:slf4j-api:${Vers.sl4j}"
     val slf4j_simple = "org.slf4j:slf4j-simple:${Vers.sl4j}"
@@ -37,9 +37,9 @@ object Libs {
     val hamcrest = "org.hamcrest:hamcrest-all:1.3"
 
 
-    val resilience4jRatelimiter = "io.github.resilience4j:resilience4j-ratelimiter:${Vers.resilience4j}"
-    val aggregatingProfiler = "ru.fix:aggregating-profiler:${Vers.aggregatingProfiler}"
-    val dynamicProperty = "ru.fix:dynamic-property-api:${Vers.dynamicProperty}"
+    val resilience4j_rate_limiter = "io.github.resilience4j:resilience4j-ratelimiter:${Vers.resilience4j}"
+    val aggregating_profiler = "ru.fix:aggregating-profiler:${Vers.aggregatingProfiler}"
+    val dynamic_property = "ru.fix:dynamic-property-api:${Vers.dynamicProperty}"
 
     val jmh_gradle_plugin = "me.champeau.gradle:jmh-gradle-plugin:0.5.0-rc-2"
     val jmh = "org.openjdk.jmh:jmh-core:${Vers.jmh}"
