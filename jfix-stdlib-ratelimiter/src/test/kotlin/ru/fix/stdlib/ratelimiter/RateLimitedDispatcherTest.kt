@@ -127,9 +127,9 @@ class RateLimitedDispatcherTest {
             assertTrue(results.contains(i))
         }
 
-        LOGGER.info("Current throughput " + report.callsThroughputAvg)
+        LOGGER.info("Current throughput " + report.stopThroughputAvg)
 
-        assertThat(report.callsThroughputAvg, lessThanOrEqualTo((RATE_LIMIT * 1.25 * 1000).toLong()))
+        assertThat(report.stopThroughputAvg, lessThanOrEqualTo((RATE_LIMIT * 1.25 * 1000.toDouble())))
 
 
         assertEquals(ITERATIONS, counter.get())

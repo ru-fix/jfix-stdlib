@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.fix.aggregating.profiler.AggregatingProfiler
+import ru.fix.aggregating.profiler.Identity
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ForkJoinPool
@@ -44,8 +45,8 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertEquals(98L, it.indicators["pool.test.queue.indicatorMax"])
-            assertEquals(2L, it.indicators["pool.test.activeThreads.indicatorMax"])
+            assertEquals(98L, it.indicators[Identity("pool.test.queue")])
+            assertEquals(2L, it.indicators[Identity("pool.test.activeThreads")])
         }
 
         //release tasks
@@ -59,10 +60,10 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertThat(100L, equalTo(it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCountSum))
-            assertThat(0L, equalTo(it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCountMax))
-            assertThat(98L, equalTo(it.profilerCallReports.find { it.name == "pool.test.await" }?.callsCountSum))
-            assertThat(0L, equalTo(it.profilerCallReports.find { it.name == "pool.test.await" }?.activeCallsCountMax))
+            assertThat(100L, equalTo(it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.stopSum))
+            assertThat(0L, equalTo(it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.activeCallsCountMax))
+            assertThat(98L, equalTo(it.profilerCallReports.find { it.identity.name == "pool.test.await" }?.stopSum))
+            assertThat(0L, equalTo(it.profilerCallReports.find { it.identity.name == "pool.test.await" }?.activeCallsCountMax))
         }
 
     }
@@ -93,7 +94,7 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertThat(it.indicators["pool.commonPool.activeThread.indicatorMax"]!!, greaterThanOrEqualTo(1L))
+            assertThat(it.indicators[Identity("pool.commonPool.activeThread")]!!, greaterThanOrEqualTo(1L))
         }
 
         unleashLatch.countDown()
@@ -125,8 +126,8 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertEquals(0L, it.indicators["pool.test.queue.indicatorMax"])
-            assertEquals(1L, it.indicators["pool.test.activeThreads.indicatorMax"])
+            assertEquals(0L, it.indicators[Identity("pool.test.queue")])
+            assertEquals(1L, it.indicators[Identity("pool.test.activeThreads")])
         }
 
         unleashLatch.countDown()
@@ -137,8 +138,8 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertEquals(1L, it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCountSum)
-            assertEquals(0L, it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCountMax)
+            assertEquals(1L, it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.stopSum)
+            assertEquals(0L, it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.activeCallsCountMax)
         }
 
         assertEquals(1, taskCompleted.sum())
@@ -171,8 +172,8 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertEquals(1L, it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCountSum)
-            assertEquals(0L, it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCountMax)
+            assertEquals(1L, it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.stopSum)
+            assertEquals(0L, it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.activeCallsCountMax)
         }
 
         assertEquals(1, taskCompleted.sum())
@@ -210,8 +211,8 @@ class ProfiledPoolsTest {
 
         reporter.buildReportAndReset().let {
             println(it)
-            assertEquals(100L, it.profilerCallReports.find { it.name == "pool.test.run" }?.callsCountSum)
-            assertEquals(0L, it.profilerCallReports.find { it.name == "pool.test.run" }?.activeCallsCountMax)
+            assertEquals(100L, it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.stopSum)
+            assertEquals(0L, it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.activeCallsCountMax)
         }
 
         assertEquals(100L, taskCompleted.sum())
