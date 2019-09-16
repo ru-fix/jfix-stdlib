@@ -8,7 +8,7 @@ object Vers {
     val hamkrest = "1.4.2.2"
 
     val resilience4j = "0.13.0"
-    val aggregatingProfiler = "1.4.7"
+    val aggregatingProfiler = "1.5.16"
     val dynamicProperty = "1.0.5"
 
     val jmh = "1.21"
