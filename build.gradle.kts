@@ -26,7 +26,7 @@ plugins {
     signing
     `maven-publish`
     id(Libs.nexus_publish_plugin) version "0.3.0" apply false
-    id(Libs.nexus_staging_plugin) version "0.21.0"
+    id(Libs.nexus_staging_plugin) version "0.21.1"
 }
 
 /**
