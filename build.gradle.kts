@@ -3,6 +3,8 @@ import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.api.tasks.testing.logging.TestLogEvent
 import org.jetbrains.dokka.gradle.DokkaTask
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.time.Duration
+import java.time.temporal.ChronoUnit
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 
@@ -107,7 +109,9 @@ subprojects {
                 stagingProfileId.set("1f0730098fd259")
             }
         }
+        clientTimeout.set(Duration.of(2, ChronoUnit.MINUTES))
     }
+
 
     project.afterEvaluate {
         publishing {
