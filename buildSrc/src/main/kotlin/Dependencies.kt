@@ -9,7 +9,7 @@ object Vers {
 
     val resilience4j = "0.13.0"
     val aggregatingProfiler = "1.5.16"
-    val dynamicProperty = "1.0.5"
+    val dynamicProperty = "1.1.0"
 
     val jmh = "1.21"
 }
