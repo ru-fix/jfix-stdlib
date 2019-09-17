@@ -29,7 +29,7 @@ public class ReferenceCleanerTest {
         myObject1 = null;
 
         assertTrue(
-                generateGarbageAndWaitForConditioin(GENERATE_GARBAGE_TIMEOUT, () -> disposedObjects.get() == 1),
+                generateGarbageAndWaitForCondition(GENERATE_GARBAGE_TIMEOUT, () -> disposedObjects.get() == 1),
                 () -> "disposed objects: " + disposedObjects.get()
         );
 
@@ -39,7 +39,7 @@ public class ReferenceCleanerTest {
         myObject2 = null;
 
         assertTrue(
-                generateGarbageAndWaitForConditioin(GENERATE_GARBAGE_TIMEOUT, () -> disposedObjects.get() == 2),
+                generateGarbageAndWaitForCondition(GENERATE_GARBAGE_TIMEOUT, () -> disposedObjects.get() == 2),
                 () -> "disposed objects: " + disposedObjects.get()
         );
     }
@@ -66,7 +66,7 @@ public class ReferenceCleanerTest {
 
         System.out.println("Create garbage and wait for " + countOfObjects + " cleaning events");
         assertTrue(
-                generateGarbageAndWaitForConditioin(GENERATE_GARBAGE_TIMEOUT, () -> disposedObjects.get() == countOfObjects),
+                generateGarbageAndWaitForCondition(GENERATE_GARBAGE_TIMEOUT, () -> disposedObjects.get() == countOfObjects),
                 () -> "disposed objects: " + disposedObjects.get()
         );
     }
@@ -83,7 +83,7 @@ public class ReferenceCleanerTest {
 
         System.out.println("Create garbage and wait for reference became unreachable");
         assertTrue(
-                generateGarbageAndWaitForConditioin(GENERATE_GARBAGE_TIMEOUT, () -> ref.get() == null)
+                generateGarbageAndWaitForCondition(GENERATE_GARBAGE_TIMEOUT, () -> ref.get() == null)
         );
     }
 
@@ -99,16 +99,16 @@ public class ReferenceCleanerTest {
         myObject = null;
         System.out.println("Create garbage and wait for reference became unreachable");
         assertTrue(
-                generateGarbageAndWaitForConditioin(GENERATE_GARBAGE_TIMEOUT, () -> ref.get() == null)
+                generateGarbageAndWaitForCondition(GENERATE_GARBAGE_TIMEOUT, () -> ref.get() == null)
         );
         assertFalse(disposed.get());
     }
 
-    private boolean generateGarbageAndWaitForConditioin(Duration duration, Supplier<Boolean> condition) throws Exception {
+    private boolean generateGarbageAndWaitForCondition(Duration duration, Supplier<Boolean> condition) throws Exception {
         ArrayList<Object> data = new ArrayList<>();
         long start = System.currentTimeMillis();
 
-        while (!condition.get() || System.currentTimeMillis() - start <= duration.toMillis()) {
+        while (!condition.get() && (System.currentTimeMillis() - start <= duration.toMillis())) {
             System.out.println("Running time: " + Duration.of(System.currentTimeMillis() - start, ChronoUnit.MILLIS));
             System.out.println("Occupied memory: " + (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 + " Kb");
 
@@ -119,7 +119,7 @@ public class ReferenceCleanerTest {
                 }
             }
             data.clear();
-            Thread.sleep(1000);
+            Thread.sleep(500);
         }
         return condition.get();
     }
