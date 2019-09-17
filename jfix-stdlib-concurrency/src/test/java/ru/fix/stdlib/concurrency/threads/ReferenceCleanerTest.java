@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class ReferenceCleanerTest {
 
-    static final Duration GENERATE_GARBAGE_TIMEOUT = Duration.of(10, ChronoUnit.SECONDS);
+    static final Duration GENERATE_GARBAGE_TIMEOUT = Duration.of(30, ChronoUnit.SECONDS);
 
     static final ReferenceCleaner referenceCleaner = ReferenceCleaner.getInstance();
 
