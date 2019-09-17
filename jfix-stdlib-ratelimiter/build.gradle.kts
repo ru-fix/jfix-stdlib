@@ -5,18 +5,19 @@ plugins {
 
 dependencies {
 
-    compile(Libs.resilience4j_rate_limiter)
-    compile(Libs.dynamic_property)
-    compile(Libs.aggregating_profiler)
+    api(Libs.resilience4j_rate_limiter)
+    api(Libs.dynamic_property)
+    api(Libs.aggregating_profiler)
 
-    testCompile(Libs.kotlin_jdk8)
-    testCompile(Libs.kotlin_stdlib)
-    testCompile(Libs.kotlin_reflect)
+    testImplementation(Libs.kotlin_jdk8)
+    testImplementation(Libs.kotlin_stdlib)
+    testImplementation(Libs.kotlin_reflect)
 
-    testCompile(Libs.hamcrest)
-    testCompile(Libs.mockito)
+    testImplementation(Libs.hamcrest)
+    testImplementation(Libs.mockito)
 
-    testCompile(Libs.junit_api)
+    testImplementation(Libs.junit_api)
+    testImplementation(Libs.awaitility)
     testRuntimeOnly(Libs.junit_engine)
 
     testRuntimeOnly(Libs.slf4j_simple)

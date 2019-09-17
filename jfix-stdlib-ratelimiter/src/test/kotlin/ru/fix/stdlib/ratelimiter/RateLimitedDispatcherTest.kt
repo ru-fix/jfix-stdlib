@@ -12,6 +12,7 @@ import ru.fix.dynamic.property.api.DynamicProperty
 import java.time.Duration
 import java.util.*
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.BiFunction
 import java.util.stream.Collectors
@@ -36,54 +37,67 @@ class RateLimitedDispatcherTest {
         }
     }
 
+    /**
+     * When dispatcher closingTimeout is anought for pending tasks to complete
+     * such tasks will complete normally
+     */
     @Test
     fun shutdown_tasksCompletedInTimeout_areCompletedNormally() {
-        createDispatcher(1_000).use {
-            assertTimeoutPreemptively(Duration.ofSeconds(5), {
-                dontProcessNewTasksInDispatcherUntilCloseIsCalled(it)
 
+        createDispatcher(5_000).use { dispatch ->
+            assertTimeoutPreemptively(Duration.ofSeconds(10)) {
+
+                val blockingTaskIsStarted = CountDownLatch(1)
+
+
+                dispatch.submit {
+                    blockingTaskIsStarted.countDown()
+                    Thread.sleep(1000)
+                }
                 val futures = ArrayList<CompletableFuture<*>>()
                 for (i in 1..3) {
-                    futures.add(it.submit({ }))
+                    futures.add(dispatch.submit({ }))
                 }
 
-                it.close()
+                blockingTaskIsStarted.await()
+                dispatch.close()
 
-                CompletableFuture.allOf(*futures.toTypedArray()).exceptionally { null }.join()
+                CompletableFuture.allOf(*futures.toTypedArray()).exceptionally { null } .join()
 
-                futures.forEach({ future: CompletableFuture<*> ->
+                futures.forEach { future: CompletableFuture<*> ->
                     assertTrue(future.isDone)
                     assertFalse(future.isCompletedExceptionally)
-                })
-            })
+                }
+            }
         }
     }
 
     @Test
     fun shutdown_tasksNotCompletedInTimeout_areCompletedExceptionally() {
-        createDispatcher(0).use {
-            assertTimeoutPreemptively(Duration.ofSeconds(5), {
+        createDispatcher(0).use { dispatch ->
+            assertTimeoutPreemptively(Duration.ofSeconds(5)) {
+                val blockingTaskIsStarted = CountDownLatch(1)
 
-                dontProcessNewTasksInDispatcherUntilCloseIsCalled(it)
-                // give dispatcher some time to switch to terminate state
-                it.submit({
-                    Thread.sleep(10)
-                })
+                dispatch.submit {
+                    blockingTaskIsStarted.countDown()
+                    Thread.sleep(1000)
+                }
 
                 val futures = ArrayList<CompletableFuture<*>>()
                 for (i in 1..3) {
-                    futures.add(it.submit({ }))
+                    futures.add(dispatch.submit { })
                 }
 
-                it.close()
+                blockingTaskIsStarted.await()
+                dispatch.close()
 
                 CompletableFuture.allOf(*futures.toTypedArray()).exceptionally { null }.join()
 
-                futures.forEach({ future: CompletableFuture<*> ->
+                futures.forEach { future: CompletableFuture<*> ->
                     assertTrue(future.isDone)
                     assertTrue(future.isCompletedExceptionally)
-                })
-            })
+                }
+            }
         }
     }
 
@@ -160,7 +174,7 @@ class RateLimitedDispatcherTest {
     companion object {
 
         private val LOGGER = LoggerFactory.getLogger(RateLimitedDispatcherTest::class.java)
-        private val RATE_LIMIT = 5701
+        private val RATE_LIMIT = 570
         private val ITERATIONS = 5 * RATE_LIMIT
     }
 

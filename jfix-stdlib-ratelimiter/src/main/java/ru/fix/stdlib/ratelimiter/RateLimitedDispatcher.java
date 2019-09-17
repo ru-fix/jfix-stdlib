@@ -2,6 +2,7 @@ package ru.fix.stdlib.ratelimiter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.fix.aggregating.profiler.NoopProfiler;
 import ru.fix.aggregating.profiler.PrefixedProfiler;
 import ru.fix.aggregating.profiler.ProfiledCall;
 import ru.fix.aggregating.profiler.Profiler;
@@ -38,8 +39,8 @@ public class RateLimitedDispatcher implements AutoCloseable {
     /**
      * Creates new dispatcher instance
      *
-     * @param name        name of dispatcher - will be used in metrics and worker's thread name
-     * @param rateLimiter rate limiter, which provides rate of operation
+     * @param name           name of dispatcher - will be used in metrics and worker's thread name
+     * @param rateLimiter    rate limiter, which provides rate of operation
      * @param closingTimeout max amount of time (in milliseconds) for waiting pending operations.
      *                       If parameter equals 0 it means that operations was completed immediately.
      *                       Any negative number will be interpreted as 0.
@@ -106,8 +107,9 @@ public class RateLimitedDispatcher implements AutoCloseable {
             logger.info("Close called on RateLimitedDispatcher [{}] with state [{}]", name, state.get());
             return;
         }
+         // If queue is empty this will awake waiting Thread
+        queue.add(new PoisonPillTask());
 
-        thread.interrupt();
         if (closingTimeout.get() < 0) {
             logger.warn("Rate limiter timeout must be greater than or equals 0. Current value is {}, rate limiter name: {}",
                     closingTimeout.get(), name);
@@ -141,25 +143,33 @@ public class RateLimitedDispatcher implements AutoCloseable {
                     state.get() == State.SHUTTING_DOWN && !queue.isEmpty()) {
                 try {
                     processingCycle();
-                } catch (Exception e) {
-                    logger.error(e.getMessage(), e);
+                } catch (InterruptedException interruptedException) {
+                    logger.error(interruptedException.getMessage(), interruptedException);
+                    break;
+
+                } catch (Exception otherException) {
+                    logger.error(otherException.getMessage(), otherException);
                 }
             }
 
+            String taskExceptionText;
+            if (state.get() == State.TERMINATE) {
+                taskExceptionText = "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state";
+            } else {
+                taskExceptionText = "RateLimitedDispatcher [" + name + "] was interrupted";
+            }
+
             queue.forEach(task -> {
-                task.getFuture().completeExceptionally(new RejectedExecutionException(
-                        "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state"
-                ));
+                task.getFuture().completeExceptionally(new RejectedExecutionException(taskExceptionText));
                 task.getQueueWaitTime().close();
             });
+
         }
 
-        private void processingCycle() {
-            Task task;
-            try {
-                task = queue.take();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        private void processingCycle() throws InterruptedException {
+            Task task = queue.take();
+
+            if(task instanceof PoisonPillTask){
                 return;
             }
 
@@ -193,7 +203,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
         }
     }
 
-    private static final class Task<T> {
+    private static class Task<T> {
         private final Supplier<T> supplier;
         private final CompletableFuture<T> future;
 
@@ -215,6 +225,12 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
         public ProfiledCall getQueueWaitTime() {
             return queueWaitTime;
+        }
+    }
+
+    private static class PoisonPillTask extends Task<Void>{
+        public PoisonPillTask() {
+            super(new CompletableFuture<>(), ()-> null, new NoopProfiler.NoopProfiledCall());
         }
     }
 
