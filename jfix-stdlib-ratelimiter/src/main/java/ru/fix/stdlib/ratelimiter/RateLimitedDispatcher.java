@@ -107,7 +107,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
             logger.info("Close called on RateLimitedDispatcher [{}] with state [{}]", name, state.get());
             return;
         }
-         // If queue is empty this will awake waiting Thread
+        // If queue is empty this will awake waiting Thread
         queue.add(new PoisonPillTask());
 
         if (closingTimeout.get() < 0) {
@@ -169,7 +169,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
         private void processingCycle() throws InterruptedException {
             Task task = queue.take();
 
-            if(task instanceof PoisonPillTask){
+            if (task instanceof PoisonPillTask) {
                 return;
             }
 
@@ -228,9 +228,9 @@ public class RateLimitedDispatcher implements AutoCloseable {
         }
     }
 
-    private static class PoisonPillTask extends Task<Void>{
+    private static class PoisonPillTask extends Task<Void> {
         public PoisonPillTask() {
-            super(new CompletableFuture<>(), ()-> null, new NoopProfiler.NoopProfiledCall());
+            super(new CompletableFuture<>(), () -> null, new NoopProfiler.NoopProfiledCall());
         }
     }
 
