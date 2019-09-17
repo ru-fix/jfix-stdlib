@@ -9,7 +9,7 @@ object Vers {
 
     val resilience4j = "0.13.0"
     val aggregatingProfiler = "1.5.16"
-    val dynamicProperty = "1.1.0"
+    val dynamic_property = "1.1.0"
 
     val jmh = "1.21"
 }
@@ -39,7 +39,7 @@ object Libs {
 
     val resilience4j_rate_limiter = "io.github.resilience4j:resilience4j-ratelimiter:${Vers.resilience4j}"
     val aggregating_profiler = "ru.fix:aggregating-profiler:${Vers.aggregatingProfiler}"
-    val dynamic_property = "ru.fix:dynamic-property-api:${Vers.dynamicProperty}"
+    val dynamic_property = "ru.fix:dynamic-property-api:${Vers.dynamic_property}"
 
     val jmh_gradle_plugin = "me.champeau.gradle:jmh-gradle-plugin:0.5.0-rc-2"
     val jmh = "org.openjdk.jmh:jmh-core:${Vers.jmh}"

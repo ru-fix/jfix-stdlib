@@ -1,30 +1,30 @@
 package ru.fix.stdlib.concurrency.threads
 
+import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
-import ru.fix.aggregating.profiler.AggregatingProfiler
 import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.dynamic.property.api.AtomicProperty
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingDeque
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 class ReschedulableSchedulerTest {
 
     @Test
-    fun `fixed rate scheduling`() {
+    fun `fixed rate scheduling launches tasks`() {
         val scheduler = NamedExecutors.newSingleThreadScheduler("", NoopProfiler())
-
         val latch = CountDownLatch(3)
 
         scheduler.schedule(
-                DynamicProperty.of(Schedule.withRate(50)),
+                DynamicProperty.of(Schedule.withRate(1)),
                 0,
                 Runnable {
                     latch.countDown()
@@ -36,6 +36,27 @@ class ReschedulableSchedulerTest {
         scheduler.shutdown()
         assertTrue(scheduler.awaitTermination(10, SECONDS))
     }
+
+    @Test
+    fun `fixed delay scheduling launches tasks`() {
+        val scheduler = NamedExecutors.newSingleThreadScheduler("", NoopProfiler())
+        val latch = CountDownLatch(3)
+
+        scheduler.schedule(
+                DynamicProperty.of(Schedule.withDelay(1)),
+                0,
+                Runnable {
+                    latch.countDown()
+                }
+        )
+
+        assertTrue(latch.await(10, SECONDS))
+
+        scheduler.shutdown()
+        assertTrue(scheduler.awaitTermination(10, SECONDS))
+    }
+
+
 
     @Test
     fun `if task takes too long time to execute second task does not start in parallel`() {
@@ -56,7 +77,7 @@ class ReschedulableSchedulerTest {
                     if (counter.getAndIncrement() == 0) {
                         //first task
                         firstTaskIsRunning.set(true)
-                        Thread.sleep(300)
+                        Thread.sleep(500)
                         firstTaskIsRunning.set(false)
                         firstTaskLatch.countDown()
                     } else {
@@ -71,7 +92,6 @@ class ReschedulableSchedulerTest {
         )
 
         assertTrue(firstTaskLatch.await(10, SECONDS))
-
         assertTrue(secondTaskLatch.await(10, SECONDS))
 
         scheduler.shutdown()
@@ -81,13 +101,13 @@ class ReschedulableSchedulerTest {
     }
 
     @Test
-    fun `job throws exception and scheduller continue to work`() {
+    fun `job throws exception and scheduller continues to work`() {
         val scheduler = NamedExecutors.newSingleThreadScheduler("", NoopProfiler())
 
         val latch = CountDownLatch(2)
 
         val schedule = scheduler.schedule(
-                Schedule.withRate(DynamicProperty.of(50)),
+                Schedule.withRate(DynamicProperty.of(1)),
                 0,
                 Runnable {
                     latch.countDown()
@@ -101,81 +121,40 @@ class ReschedulableSchedulerTest {
         scheduler.awaitTermination(10, SECONDS)
     }
 
-
-    /**
-     * Asserts dynamic delay change
-     * Could be unstable.
-     * Stable test for shceduller is hard to design
-     * due to unpredictable nature of OS scheduler and current load of machine where test is executed.
-     * Normal stable test is required.
-     */
     @Test
-    fun `dealy dynamically changes over time`() {
-        val scheduler = NamedExecutors.newSingleThreadScheduler("", AggregatingProfiler())
-
-        val scheduleCounter = AtomicInteger()
-
-        val scheduleSupplier = {
-            when (scheduleCounter.getAndIncrement()) {
-                0, 1 -> Schedule.withDelay(10)
-                else -> Schedule.withDelay(1500)
-            }
-        }
+    fun `delay dynamically changes when config changes`() {
+        val scheduler = NamedExecutors.newSingleThreadScheduler("test-scheduler", NoopProfiler())
+        val schedule = AtomicProperty(Schedule.withDelay(10))
+        val invocations = LinkedBlockingDeque<Duration>()
 
         val prevRunTimestamp = AtomicReference(Instant.now())
+        scheduler.schedule(schedule, 0) {
 
-        val countJobsLatch = CountDownLatch(3)
-        val counter = AtomicInteger()
-
-        val firstDelay = AtomicLong()
-        val secondDelay = AtomicLong()
-
-
-        scheduler.schedule(scheduleSupplier, 0) {
-            val currentRunNum = counter.getAndIncrement()
-
-            if (currentRunNum == 0) {
-                //skip first run
-                prevRunTimestamp.set(Instant.now())
-
-            } else {
-                val delay = Duration.between(prevRunTimestamp.get(), Instant.now()).toMillis()
-
-                /*
-                After job execution when currentRunNum=1 then ScheduleDelay switch to 1500 from 10.
-                First run after switching will be happen immediately because startDelay=0,
-                but next runs will be happening with delay=1500.
-                How runs look like: 0 {10 delay} 1 {switching} 2 {1500 delay} 3 {1500 delay} ...
-                 */
-                if (currentRunNum == 1) {
-                    firstDelay.set(delay)
-                } else if (currentRunNum == 3) {
-                    secondDelay.set(delay)
-                }
-                println("run $currentRunNum delay: ${delay}ms")
-
-                prevRunTimestamp.set(Instant.now())
-                countJobsLatch.countDown()
-            }
+            val delay = Duration.between(prevRunTimestamp.get(), Instant.now())
+            prevRunTimestamp.set(Instant.now())
+            invocations.add(delay)
         }
 
-        assertTrue(countJobsLatch.await(20, SECONDS))
-        scheduler.shutdown()
-        assertTrue(scheduler.awaitTermination(20, SECONDS))
+        await().atMost(Duration.ofMinutes(10)).until {
+            invocations.takeFirst() in (Duration.ofMillis(1)..Duration.ofMillis(1000))
+        }
+        schedule.set(Schedule.withDelay(1500))
 
-        assertTrue(firstDelay.get() + 100 < secondDelay.get() - 100)
+        await().atMost(Duration.ofMinutes(10)).until {
+            invocations.takeFirst() in (Duration.ofMillis(1000)..Duration.ofMillis(5000))
+        }
     }
 
     @Test
     fun `reschedule must occur immediately if scheduled property changed`() {
-        val scheduler = NamedExecutors.newSingleThreadScheduler("", AggregatingProfiler())
+        val scheduler = NamedExecutors.newSingleThreadScheduler("", NoopProfiler())
 
         val taskExecutionCounter = AtomicInteger(0)
 
         val countDownLatchOfFirstTaskExecution = CountDownLatch(1)
         val countDownLatch = CountDownLatch(3)
 
-        val property = AtomicProperty(120000)
+        val property = AtomicProperty(TimeUnit.HOURS.toMillis(1))
 
         scheduler.schedule(Schedule.withDelay(property), Runnable {
             taskExecutionCounter.incrementAndGet()
@@ -190,12 +169,14 @@ class ReschedulableSchedulerTest {
         assertTrue(countDownLatchOfFirstTaskExecution.await(20, SECONDS))
         assertEquals(1, taskExecutionCounter.get() )
 
-        //Change property, reschedule must occur
-        property.set(500)
+        //Give scheduler time to schedule next task (task will be planned with hour dely)
+        assertFalse(countDownLatch.await(1, SECONDS))
 
-        assertTimeout(Duration.ofSeconds(20)) {
-            assertTrue(countDownLatch.await(20, SECONDS))
-            assertTrue(4 <= taskExecutionCounter.get())
-        }
+
+        //Change property, reschedule must occur
+        property.set(100)
+
+        assertTrue(countDownLatch.await(20, SECONDS))
+        assertTrue(4 <= taskExecutionCounter.get())
     }
 }
