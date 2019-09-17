@@ -108,7 +108,7 @@ public class ReferenceCleanerTest {
         ArrayList<Object> data = new ArrayList<>();
         long start = System.currentTimeMillis();
 
-        while (!condition.get() || System.currentTimeMillis() - start > duration.toMillis()) {
+        while (!condition.get() || System.currentTimeMillis() - start <= duration.toMillis()) {
             System.out.println("Running time: " + Duration.of(System.currentTimeMillis() - start, ChronoUnit.MILLIS));
             System.out.println("Occupied memory: " + (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 + " Kb");
 
