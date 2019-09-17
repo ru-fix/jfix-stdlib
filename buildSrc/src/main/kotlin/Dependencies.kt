@@ -4,7 +4,7 @@ object Vers {
     val sl4j = "1.7.25"
     val dokkav = "0.9.18"
     val gradle_release_plugin = "1.3.9"
-    val junit = "5.2.0"
+    val junit = "5.5.2"
     val hamkrest = "1.4.2.2"
 
     val resilience4j = "0.13.0"
