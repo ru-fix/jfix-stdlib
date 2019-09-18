@@ -52,6 +52,7 @@ class RateLimitedDispatcherTest {
 
                 dispatch.submit {
                     blockingTaskIsStarted.countDown()
+                    //Due to blocking nature of dispatch.close we hae to use sleep
                     Thread.sleep(1000)
                 }
                 val futures = ArrayList<CompletableFuture<*>>()
@@ -80,6 +81,7 @@ class RateLimitedDispatcherTest {
 
                 dispatch.submit {
                     blockingTaskIsStarted.countDown()
+                    //Due to blocking nature of dispatch.close we hae to use sleep
                     Thread.sleep(1000)
                 }
 
@@ -107,14 +109,6 @@ class RateLimitedDispatcherTest {
                 DynamicProperty.of(closingTimeout))
     }
 
-    private fun dontProcessNewTasksInDispatcherUntilCloseIsCalled(dispatcher: RateLimitedDispatcher) {
-        dispatcher.submit({
-            //will be interrupted by dispatcher on close
-            while (true) {
-                Thread.sleep(10)
-            }
-        })
-    }
 
     private fun testThroughput(biFunction: BiFunction<ProfiledCall, AtomicInteger, CompletableFuture<Int>>) {
         val counter = AtomicInteger(0)

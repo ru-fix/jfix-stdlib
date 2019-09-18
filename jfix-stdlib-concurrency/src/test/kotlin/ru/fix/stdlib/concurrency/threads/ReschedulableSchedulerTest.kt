@@ -68,7 +68,7 @@ class ReschedulableSchedulerTest {
         val firstTaskLatch = CountDownLatch(1)
         val secondTaskLatch = CountDownLatch(1)
 
-        val secondTaskIsLaunchedInParallelWtihFirstLongTask = AtomicBoolean(false)
+        val secondTaskIsLaunchedInParallelWithFirstLongTask = AtomicBoolean(false)
 
         scheduler.schedule(
                 Schedule.withRate(DynamicProperty.of(1)),
@@ -77,14 +77,15 @@ class ReschedulableSchedulerTest {
                     if (counter.getAndIncrement() == 0) {
                         //first task
                         firstTaskIsRunning.set(true)
-                        Thread.sleep(500)
+                        //wait and give an opportunity to the second task to be launched
+                        Thread.sleep(1000)
                         firstTaskIsRunning.set(false)
                         firstTaskLatch.countDown()
                     } else {
                         //other tasks that should not run
                         //while first one not finished
                         if (firstTaskIsRunning.get()) {
-                            secondTaskIsLaunchedInParallelWtihFirstLongTask.set(true)
+                            secondTaskIsLaunchedInParallelWithFirstLongTask.set(true)
                         }
                         secondTaskLatch.countDown()
                     }
@@ -97,7 +98,7 @@ class ReschedulableSchedulerTest {
         scheduler.shutdown()
         assertTrue(scheduler.awaitTermination(10, SECONDS))
 
-        assertFalse(secondTaskIsLaunchedInParallelWtihFirstLongTask.get())
+        assertFalse(secondTaskIsLaunchedInParallelWithFirstLongTask.get())
     }
 
     @Test

@@ -2,10 +2,12 @@ package ru.fix.stdlib.concurrency.threads
 
 import com.natpryce.hamkrest.assertion.assertThat
 import com.natpryce.hamkrest.containsSubstring
+import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
 import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
+import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.Semaphore
@@ -41,7 +43,8 @@ class ThreadPoolGuardTest {
             )
         }
 
-        Thread.sleep(300)
+        //Wait for 1 second and assure that guard did not raised alarm
+        Thread.sleep(1000)
         semaphore.release(300)
 
         futures.forEach { it.join() }
@@ -66,8 +69,6 @@ class ThreadPoolGuardTest {
                 pool,
                 DynamicProperty.of(400)) { queueSize, dump ->
 
-            println(dump)
-
             if (alarmFlag.compareAndSet(false, true)) {
                 dumpReceiver.set(dump)
             }
@@ -83,12 +84,10 @@ class ThreadPoolGuardTest {
             )
         }
 
-        Thread.sleep(300)
+        await().atMost(Duration.ofMinutes(1)).until(alarmFlag::get)
+
         semaphore.release(500)
-
         futures.forEach { it.join() }
-
-        Assertions.assertTrue(alarmFlag.get())
 
         assertThat(dumpReceiver.get(), containsSubstring(this::class.java.simpleName))
         assertThat(dumpReceiver.get(), containsSubstring("Semaphore"))
