@@ -11,6 +11,7 @@ import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeUnit.MINUTES
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -179,5 +180,32 @@ class ReschedulableSchedulerTest {
 
         assertTrue(countDownLatch.await(20, SECONDS))
         assertTrue(4 <= taskExecutionCounter.get())
+    }
+
+    @Test
+    fun `reschedule does not start new task if previous task did not compete `(){
+        val scheduler = NamedExecutors.newScheduler("scheduler", DynamicProperty.of(5), NoopProfiler())
+        val schedule = AtomicProperty(Schedule.withRate(1))
+        val blockFirstTaskLatch = CountDownLatch(1)
+        val launchedTasksCount = AtomicInteger()
+
+        scheduler.schedule(schedule){
+            when (launchedTasksCount.incrementAndGet()) {
+                1 -> blockFirstTaskLatch.await()
+            }
+        }
+
+        for(i in 1..100) {
+            schedule.set(Schedule.withRate(i.toLong()))
+        }
+
+        //Give an opportunity for new tasks to be rescheduled
+        Thread.sleep(1000)
+
+        assertEquals(1, launchedTasksCount.get())
+
+        blockFirstTaskLatch.countDown()
+        scheduler.shutdown()
+        assertTrue(scheduler.awaitTermination(1, MINUTES))
     }
 }

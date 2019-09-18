@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import ru.fix.dynamic.property.api.DynamicProperty;
 
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Wrapper under runnable task. Save and check schedule value. If value was changed, task will be rescheduled.
@@ -47,9 +48,9 @@ public class ReschedulableScheduler {
      *
      * @return result task from executionService
      */
-    public ScheduledFuture<?> schedule(DynamicProperty<Schedule> scheduleSupplier, Runnable task) {
+    public ScheduledFuture<?> schedule(DynamicProperty<Schedule> schedule, Runnable task) {
         SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
-                scheduleSupplier,
+                schedule,
                 DEFAULT_START_DELAY,
                 task,
                 executorService
@@ -87,7 +88,7 @@ public class ReschedulableScheduler {
     private static class SelfSchedulableTaskWrapper implements Runnable {
 
         private Schedule previousSchedule;
-        private DynamicProperty<Schedule> scheduleSupplier;
+        private DynamicProperty<Schedule> schedule;
         private final long startDelay;
 
         private ScheduledFuture<?> scheduledFuture;
@@ -100,13 +101,14 @@ public class ReschedulableScheduler {
 
         private volatile ScheduleSettings settings;
         private volatile long lastExecutedTs = 0;
+        private AtomicBoolean taskIsRunning = new AtomicBoolean(false);
 
-        public SelfSchedulableTaskWrapper(DynamicProperty<Schedule> scheduleSupplier,
+        public SelfSchedulableTaskWrapper(DynamicProperty<Schedule> schedule,
                                           long startDelay,
                                           Runnable task,
                                           ScheduledExecutorService executorService) {
-            this.scheduleSupplier = scheduleSupplier;
-            this.scheduleSupplier.addListener(this::checkPreviousScheduleAndRestartTask);
+            this.schedule = schedule;
+            this.schedule.addListener(this::checkPreviousScheduleAndRestartTask);
             this.startDelay = startDelay;
             this.task = task;
             this.executorService = executorService;
@@ -115,6 +117,14 @@ public class ReschedulableScheduler {
         @Override
         @SuppressWarnings("squid:S1181")
         public void run() {
+            //Preventing concurrent task launch for the case when
+            // previously launched task still working,
+            // schedule changed and triggered new scheduled task to launch
+            if(!taskIsRunning.compareAndSet(false, true)){
+                return;
+            }
+
+
             ScheduleSettings currSettings = this.settings;
             if (currSettings.type == Schedule.Type.RATE) {
                 //
@@ -161,7 +171,9 @@ public class ReschedulableScheduler {
                 log.error("ReschedulableScheduler task failed due to: " + exc.getMessage(), exc);
 
             } finally {
-                checkPreviousScheduleAndRestartTask(scheduleSupplier.get());
+                taskIsRunning.compareAndSet(true, false);
+
+                checkPreviousScheduleAndRestartTask(schedule.get());
             }
         }
 
@@ -178,7 +190,7 @@ public class ReschedulableScheduler {
         }
 
         synchronized ScheduledFuture<?> launch() {
-            Schedule schedule = scheduleSupplier.get();
+            Schedule schedule = this.schedule.get();
 
             this.scheduledFuture = schedule(this, schedule, this.startDelay);
             previousSchedule = schedule;
