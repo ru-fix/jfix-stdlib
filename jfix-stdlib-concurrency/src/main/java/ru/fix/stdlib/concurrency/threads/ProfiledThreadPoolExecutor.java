@@ -112,8 +112,15 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
     }
 
     public void setMaxPoolSize(int maxPoolSize) {
-        this.setCorePoolSize(maxPoolSize);
-        this.setMaximumPoolSize(maxPoolSize);
+        if (this.getCorePoolSize() < maxPoolSize) {
+            //increasing pool size
+            this.setMaximumPoolSize(maxPoolSize);
+            this.setCorePoolSize(maxPoolSize);
+        } else if (this.getCorePoolSize() > maxPoolSize) {
+            //reducing pool size
+            this.setCorePoolSize(maxPoolSize);
+            this.setMaximumPoolSize(maxPoolSize);
+        }
     }
 
     @Override
