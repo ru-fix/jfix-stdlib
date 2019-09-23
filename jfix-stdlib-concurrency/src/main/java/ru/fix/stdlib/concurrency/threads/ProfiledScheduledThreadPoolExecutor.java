@@ -82,8 +82,13 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
 
 
     public void setMaxPoolSize(int maxPoolSize) {
-        this.setCorePoolSize(maxPoolSize);
-        this.setMaximumPoolSize(maxPoolSize);
+        if(maxPoolSize >= getMaximumPoolSize()){
+            setMaximumPoolSize(maxPoolSize);
+            setCorePoolSize(maxPoolSize);
+        } else {
+            setCorePoolSize(maxPoolSize);
+            setMaximumPoolSize(maxPoolSize);
+        }
     }
 
     @Override
