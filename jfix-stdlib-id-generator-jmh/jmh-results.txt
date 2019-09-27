@@ -1,6 +1,6 @@
 # JMH version: 1.21
-# VM version: JDK 11.0.2, Java HotSpot(TM) 64-Bit Server VM, 11.0.2+9-LTS
-# VM invoker: /usr/lib/jvm/java-11-oracle/bin/java
+# VM version: JDK 11.0.4-BellSoft, OpenJDK 64-Bit Server VM, 11.0.4-BellSoft+10
+# VM invoker: /usr/lib/jvm/bellsoft-java11-amd64/bin/java
 # VM options: <none>
 # Warmup: 2 iterations, 10 s each
 # Measurement: 5 iterations, 10 s each
@@ -9,5 +9,6 @@
 # Benchmark mode: Throughput, ops/time
 
 
-IdGeneratorJmh.atomic                 thrpt   10  39 150 144.163 ± 338 896.656  ops/s
-IdGeneratorJmh.unsafeAtomicIncrement  thrpt   10  39 074 785.515 ± 101 378.575  ops/s
+Benchmark                              Mode  Cnt         Score         Error  Units
+IdGeneratorJmh.atomic                 thrpt   10  38 011 534.798 ±   687 015.646  ops/s
+IdGeneratorJmh.unsafeAtomicIncrement  thrpt   10  38 125 012.541 ± 1 211 393.784  ops/s

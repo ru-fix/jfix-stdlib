@@ -76,8 +76,7 @@ class AtomicIdGenerator(
                 //Catch up id time with current time
                 val newIdValue = buildIdForNewTimestampWithZeroCounter(currentTime)
 
-                //TODO: replace with compareAndExchange during update to JDK11
-                if (id.compareAndSet(idValue, newIdValue)) {
+                if (id.weakCompareAndSetVolatile(idValue, newIdValue)) {
                     return newIdValue
                 } else {
                     //id was updated by other thread, try again

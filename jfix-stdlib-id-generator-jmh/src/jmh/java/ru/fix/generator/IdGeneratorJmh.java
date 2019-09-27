@@ -3,7 +3,9 @@ package ru.fix.generator;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.State;
-import ru.fix.stdlib.id.generator.*;
+import ru.fix.stdlib.id.generator.AtomicIdGenerator;
+import ru.fix.stdlib.id.generator.BitsConfiguration;
+import ru.fix.stdlib.id.generator.IdGenerator;
 
 import java.time.Clock;
 import java.util.concurrent.atomic.AtomicLong;
@@ -27,6 +29,9 @@ public class IdGeneratorJmh {
         return atomicGenerator.nextId();
     }
 
+    /**
+     * only volatile read and bitwise operations
+     */
     final IdGenerator unsafeAtomicIncGenerator = new IdGenerator() {
         AtomicLong counter = new AtomicLong();
         @Override
@@ -36,9 +41,4 @@ public class IdGeneratorJmh {
                     1 & bitsConfig.getServerPartMask();
         }
     };
-
-    @Benchmark
-    public long unsafeAtomicIncrement() {
-        return atomicGenerator.nextId();
-    }
 }
