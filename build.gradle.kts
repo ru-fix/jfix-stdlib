@@ -12,6 +12,7 @@ buildscript {
     repositories {
         jcenter()
         mavenCentral()
+        mavenLocal()
     }
     dependencies {
         classpath(Libs.gradle_release_plugin)
@@ -77,6 +78,7 @@ subprojects {
     repositories {
         jcenter()
         mavenCentral()
+        mavenLocal()
     }
 
     val sourcesJar by tasks.creating(Jar::class) {

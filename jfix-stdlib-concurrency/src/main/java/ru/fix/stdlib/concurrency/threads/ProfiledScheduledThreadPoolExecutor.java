@@ -50,7 +50,7 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
         this.setKeepAliveTime(THREAD_IDLE_TIMEOUT_BEFORE_TERMINATION_SEC, TimeUnit.SECONDS);
         this.allowCoreThreadTimeOut(true);
 
-        maxPoolSize.addListener(this::setMaxPoolSize);
+        maxPoolSize.addAndCallListener((oldVal, newVal) -> this.setMaxPoolSize(newVal));
 
         profiler.attachIndicator(queueIndicatorName, () -> (long) this.getQueue().size());
         profiler.attachIndicator(activeThreadsIndicatorName, () -> (long) this.getActiveCount());

@@ -108,7 +108,7 @@ public class ReschedulableScheduler {
                                           Runnable task,
                                           ScheduledExecutorService executorService) {
             this.schedule = schedule;
-            this.schedule.addListener(this::checkPreviousScheduleAndRestartTask);
+            this.schedule.addListener((oldVal, newVal) -> this.checkPreviousScheduleAndRestartTask(newVal));
             this.startDelay = startDelay;
             this.task = task;
             this.executorService = executorService;

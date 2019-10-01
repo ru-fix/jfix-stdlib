@@ -4,22 +4,16 @@ plugins {
 }
 
 dependencies {
-
-    api(Libs.dynamic_property)
-    api(Libs.aggregating_profiler)
-
+    implementation(Libs.log4j_kotlin)
     implementation(Libs.kotlin_jdk8)
     implementation(Libs.kotlin_stdlib)
     implementation(Libs.kotlin_reflect)
 
-    testImplementation(Libs.hamkrest)
-    testImplementation(Libs.awaitility)
+    implementation(project(Projs.jfix_stdlib_concurrency.dependency))
+
     testImplementation(Libs.junit_api)
     testImplementation(Libs.junit_params)
     testRuntimeOnly(Libs.junit_engine)
-    testRuntimeOnly(Libs.slf4j_simple)
 
-
+    testRuntimeOnly(Libs.log4j_core)
 }
-
-

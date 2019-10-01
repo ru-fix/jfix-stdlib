@@ -68,7 +68,7 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
 
         super.allowCoreThreadTimeOut(true);
 
-        maxPoolSize.addListener(this::setMaxPoolSize);
+        maxPoolSize.addAndCallListener((oldVal, newVal) -> this.setMaxPoolSize(newVal));
 
         profiler.attachIndicator(queueIndicatorName, () -> (long) this.getQueue().size());
         profiler.attachIndicator(activeThreadsIndicatorName, () -> (long) this.getActiveCount());
