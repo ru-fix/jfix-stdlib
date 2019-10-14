@@ -9,7 +9,7 @@ object Vers {
 
     const val resilience4j = "0.13.0"
     const val aggregating_profiler = "1.5.16"
-    const val dynamic_property = "1.1.3"
+    const val dynamic_property = "1.1.5"
 
     const val jmh = "1.21"
 

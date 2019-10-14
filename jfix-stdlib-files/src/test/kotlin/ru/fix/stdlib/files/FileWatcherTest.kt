@@ -1,4 +1,4 @@
-package ru.fix.crudility.infra
+package ru.fix.stdlib.files
 
 import org.apache.logging.log4j.kotlin.Logging
 import org.junit.jupiter.api.Assertions.assertTrue
