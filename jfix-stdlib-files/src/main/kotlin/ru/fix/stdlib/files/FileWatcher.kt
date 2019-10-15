@@ -24,7 +24,8 @@ class FileWatcher : AutoCloseable {
     val watchService = FileSystems.getDefault().newWatchService()
 
     fun register(filePath: Path, listener: (Path) -> Unit) {
-        val dir = filePath.toAbsolutePath().parent
+        val filePath = filePath.toAbsolutePath()
+        val dir = filePath.parent
 
         if (!dirToKey.contains(dir)) {
             val key = dir.register(watchService, StandardWatchEventKinds.ENTRY_MODIFY)
@@ -38,7 +39,8 @@ class FileWatcher : AutoCloseable {
     }
 
     fun unregister(filePath: Path) {
-        val dir = filePath.toAbsolutePath().parent
+        val filePath = filePath.toAbsolutePath()
+        val dir = filePath.parent
         val key = dirToKey[dir] ?: return
 
         keyToFileNameListeners.compute(key) { _, fileNameListeners ->
