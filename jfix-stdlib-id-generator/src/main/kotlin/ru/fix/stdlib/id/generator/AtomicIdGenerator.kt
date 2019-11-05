@@ -68,7 +68,7 @@ class AtomicIdGenerator(
         while (true) {
             val idValue = id.get()
             val idTime = timeFromId(idValue)
-            val currentTime = clock.millis()
+            val currentTime = clock.millis() and bitsConfig.timePartMask
 
             if (idTime >= currentTime) {
                 return id.addAndGet(bitsConfig.serverPartMask + 1)
