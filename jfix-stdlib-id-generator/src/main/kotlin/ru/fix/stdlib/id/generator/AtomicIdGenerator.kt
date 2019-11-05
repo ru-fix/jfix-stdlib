@@ -1,17 +1,22 @@
 package ru.fix.stdlib.id.generator
 
+import org.apache.logging.log4j.kotlin.Logging
 import java.time.Clock
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Generates growing unique identifier.
  */
 class AtomicIdGenerator(
-        private val bitsConfig: BitsConfiguration,
-        private val startOfTime: Long,
-        serverId: Long,
-        private val clock: Clock
+    private val bitsConfig: BitsConfiguration,
+    private val startOfTime: Long,
+    serverId: Long,
+    private val clock: Clock
 ) : IdGenerator {
+
+    companion object : Logging
+
     /**
      * Last used ID
      */
@@ -24,6 +29,15 @@ class AtomicIdGenerator(
         }
 
         clock.millis().let { currentTime ->
+            if (java.lang.Long.highestOneBit((currentTime - startOfTime)) > bitsConfig.timePartMask) {
+                logger.warn {
+                    """
+                        Id generator configured with ${bitsConfig.timePartBits} bits for timestamp part.
+                        That is not enough to hold current timestamp with configured started time
+                        ${Instant.ofEpochMilli(startOfTime)}
+                    """.trimIndent()
+                }
+            }
             require(startOfTime in 0..currentTime) {
                 "startOfTime $startOfTime should be non negative and cannot be greater than current time $currentTime"
             }
@@ -33,12 +47,13 @@ class AtomicIdGenerator(
     }
 
     private fun buildIdForNewTimestampWithZeroCounter(timeValue: Long): Long {
-        val timestampPart = ((timeValue - startOfTime) and bitsConfig.timePartMask) shl (bitsConfig.serverPartBits + bitsConfig.counterPartBits)
+        val timestampPart =
+            ((timeValue - startOfTime) and bitsConfig.timePartMask) shl (bitsConfig.serverPartBits + bitsConfig.counterPartBits)
         return timestampPart or serverIdPart
     }
 
     private fun timeFromId(idValue: Long): Long =
-            startOfTime + (idValue shr (bitsConfig.serverPartBits + bitsConfig.counterPartBits)) and bitsConfig.timePartMask
+        startOfTime + (idValue shr (bitsConfig.serverPartBits + bitsConfig.counterPartBits)) and bitsConfig.timePartMask
 
 
     override fun nextId(): Long {

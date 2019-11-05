@@ -6,7 +6,7 @@ plugins {
 }
 
 dependencies {
-
+    implementation(Libs.log4j_kotlin)
     implementation(Libs.kotlin_jdk8)
     implementation(Libs.kotlin_stdlib)
     implementation(Libs.kotlin_reflect)
