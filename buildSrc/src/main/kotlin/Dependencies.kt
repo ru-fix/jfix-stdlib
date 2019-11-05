@@ -61,10 +61,11 @@ object Libs {
 
 enum class Projs{
     jfix_stdlib_concurrency,
+    jfix_stdlib_files,
+    jfix_stdlib_id_generator,
+    jfix_stdlib_id_generator_jmh,
     jfix_stdlib_ratelimiter,
-    jfix_stdlib_socket,
-    jfix_stdlib_id,
-    jfix_stdlib_files;
+    jfix_stdlib_socket;
 
     val directory get() = this.name.replace('_', '-')
     val dependency get(): String = ":$directory"

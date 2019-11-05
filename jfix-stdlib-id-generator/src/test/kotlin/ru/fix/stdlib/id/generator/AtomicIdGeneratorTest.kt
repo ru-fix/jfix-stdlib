@@ -11,9 +11,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.mockito.Mockito.`when`
 import java.lang.Exception
-import java.time.Clock
-import java.time.OffsetDateTime
-import java.time.ZoneOffset
+import java.time.*
 import java.util.concurrent.atomic.AtomicLong
 
 
@@ -255,6 +253,24 @@ class AtomicIdGeneratorTest{
         assertEquals("0000000000000000000000000000000000000000001100000000000000000001", toBinaryString(idList[0]))
         assertEquals("0000000000000000000000000000000000000000010000000000000000000001", toBinaryString(idList[1]))
         assertEquals("0000000000000000000000000000000000000001000000000000000000000001", toBinaryString(idList[2]))
+    }
+
+    @Test
+    fun `ids must be unique if time parts bit are low`() {
+        val bits = BitsConfiguration(
+            timePartBits = 20,
+            counterPartBits = 10,
+            serverPartBits = 20
+        )
+        val idGenerator = AtomicIdGenerator(
+            bitsConfig = bits,
+            startOfTime = Instant.now().minus(Duration.ofDays(1)).toEpochMilli(),
+            serverId = 1,
+            clock = Clock.fixed(Instant.now(), ZoneId.systemDefault())
+        )
+
+        val generatedIds = (1..5).map { idGenerator.nextId() }
+        assertEquals(generatedIds.toSet().size, generatedIds.size)
     }
 
     private fun toBinaryString(value: Long): String {
