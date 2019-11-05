@@ -264,7 +264,7 @@ class AtomicIdGeneratorTest{
         )
         val idGenerator = AtomicIdGenerator(
             bitsConfig = bits,
-            startOfTime = 0,
+            startOfTime = Instant.now().minus(Duration.ofDays(1)).toEpochMilli(),
             serverId = 1,
             clock = Clock.fixed(Instant.now(), ZoneId.systemDefault())
         )
