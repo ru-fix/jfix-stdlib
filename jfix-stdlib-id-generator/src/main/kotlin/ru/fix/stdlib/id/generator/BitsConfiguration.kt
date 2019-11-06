@@ -8,9 +8,11 @@ package ru.fix.stdlib.id.generator
  * server - unique number of a server or application instance or process that generated id
  *
  * Take into consideration that:
- * 43 bit timestamp will cover about 278 years.
+ * ```
+ * 44 bit timestamp covers about 556 years.
  * 9 bit counter will flip every 512 iteration
  * 10 bit server number will allow to use 1024 unique application instances to generate ids concurrently
+ * ```
  * Prefer to use 63 bit keys in order to support growing ids in systems that do not allow unsigned long values.
  *
  * Total count of bits cannot be greater than 64
