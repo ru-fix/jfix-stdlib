@@ -201,6 +201,8 @@ public class ReschedulableScheduler {
             this.scheduledFuture = schedule(this, schedule, this.startDelay);
             previousSchedule = schedule;
 
+            log.trace("scheduledFuture={} with hash={} is launched",
+                    scheduledFuture, System.identityHashCode(scheduledFuture));
             return reschedulableFuture;
         }
 
@@ -228,6 +230,8 @@ public class ReschedulableScheduler {
         }
 
         public synchronized void cancel(boolean mayInterruptIfRunning) {
+            log.trace("cancelling scheduledFuture {} with hash={}",
+                    scheduledFuture, System.identityHashCode(scheduledFuture));
             scheduledFuture.cancel(mayInterruptIfRunning);
         }
     }
