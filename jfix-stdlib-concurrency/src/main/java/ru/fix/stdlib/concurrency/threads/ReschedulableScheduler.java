@@ -14,7 +14,7 @@ import java.util.function.Consumer;
 /**
  * Wrapper under runnable task. Save and check schedule value. If value was changed, task will be rescheduled.
  */
-public class ReschedulableScheduler {
+public class ReschedulableScheduler implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(ReschedulableScheduler.class);
 
     private static final long DEFAULT_START_DELAY = 0;
@@ -24,6 +24,7 @@ public class ReschedulableScheduler {
 
     private final Set<SelfSchedulableTaskWrapper> activeTasks;
     private final Profiler profiler;
+    private final AtomicBoolean isShutdown = new AtomicBoolean(false);
 
     /**
      * ReschedulableScheduler based on given executorService
@@ -36,6 +37,10 @@ public class ReschedulableScheduler {
         profiler.attachIndicator(THREAD_POOL_SIZE_INDICATOR, () -> (long) activeTasks.size());
     }
 
+    private void detachIndicators() {
+        profiler.detachIndicator(THREAD_POOL_SIZE_INDICATOR);
+    }
+
     /**
      * change execution by schedule type
      *
@@ -44,6 +49,11 @@ public class ReschedulableScheduler {
     public ScheduledFuture<?> schedule(DynamicProperty<Schedule> scheduleSupplier,
                                        long startDelay,
                                        Runnable task) {
+
+        if (isShutdown.get()) {
+            throw new IllegalStateException("ReschedulableScheduler is shutdown and can not schedule new task." +
+                    " Task: " + task);
+        }
 
         SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
                 scheduleSupplier,
@@ -72,9 +82,10 @@ public class ReschedulableScheduler {
      * shorter version of {@code getExecutorService().shutdown()}
      */
     public void shutdown() {
-        executorService.shutdown();
         cancelAllTasks(false);
-        profiler.detachIndicator(THREAD_POOL_SIZE_INDICATOR);
+        executorService.shutdown();
+        detachIndicators();
+        isShutdown.set(true);
     }
 
     /**
@@ -83,19 +94,15 @@ public class ReschedulableScheduler {
      * shorter version of {@code getExecutorService().shutdownNow()}
      */
     public void shutdownNow() {
-        executorService.shutdownNow();
         cancelAllTasks(true);
-        profiler.detachIndicator(THREAD_POOL_SIZE_INDICATOR);
+        executorService.shutdownNow();
+        detachIndicators();
+        isShutdown.set(true);
     }
 
     private void cancelAllTasks(boolean mayInterruptIfRunning) {
-        synchronized (activeTasks) {
-            activeTasks.forEach(taskWrapper -> taskWrapper.cancel(mayInterruptIfRunning));
-        }
-        while(!activeTasks.isEmpty()){
-            synchronized (activeTasks) {
-                activeTasks.iterator().next().cancel(mayInterruptIfRunning);
-            }
+        for (SelfSchedulableTaskWrapper task : activeTasks.toArray(new SelfSchedulableTaskWrapper[0])) {
+            task.cancel(mayInterruptIfRunning);
         }
     }
 
@@ -143,6 +150,12 @@ public class ReschedulableScheduler {
         @Override
         @SuppressWarnings("squid:S1181")
         public void run() {
+            ScheduledFuture<?> scheduledFuture;
+            synchronized (this){
+                scheduledFuture = this.scheduledFuture;
+            }
+
+
             //Preventing concurrent task launch for the case when
             // previously launched task still working,
             // schedule changed and triggered new scheduled task to launch
@@ -229,7 +242,7 @@ public class ReschedulableScheduler {
             }
         }
 
-        synchronized ScheduledFuture<?> launch() {
+        public synchronized ScheduledFuture<?> launch() {
             this.scheduleListener = (oldVal, newVal) -> this.checkPreviousScheduleAndRestartTask(newVal);
             this.schedule.addListener(this.scheduleListener);
             Schedule schedule = this.schedule.get();
@@ -344,4 +357,15 @@ public class ReschedulableScheduler {
             return safeDelay;
         }
     }
+
+
+    /**
+     * Same as {@link #shutdown()}
+     */
+    @Override
+    public void close() {
+        shutdown();
+    }
+
+
 }
