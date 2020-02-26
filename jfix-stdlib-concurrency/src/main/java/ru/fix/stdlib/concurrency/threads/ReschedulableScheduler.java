@@ -2,6 +2,8 @@ package ru.fix.stdlib.concurrency.threads;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.fix.aggregating.profiler.IndicationProvider;
+import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.dynamic.property.api.DynamicPropertyListener;
 
@@ -21,7 +23,7 @@ public class ReschedulableScheduler {
 
     private final ScheduledExecutorService executorService;
 
-    private Set<SelfSchedulableTaskWrapper> activeTaskWrappers;
+    private final Set<SelfSchedulableTaskWrapper> activeTasks;
 
     private boolean shutdownInvoked = false;
 
@@ -29,9 +31,10 @@ public class ReschedulableScheduler {
      * ReschedulableScheduler based on given executorService
      * It would be better to use {@link ProfiledScheduledThreadPoolExecutor} as executorService
      */
-    public ReschedulableScheduler(ScheduledExecutorService executorService) {
+    public ReschedulableScheduler(ScheduledExecutorService executorService, Profiler profiler) {
         this.executorService = executorService;
-        this.activeTaskWrappers = new HashSet<>();
+        this.activeTasks = new HashSet<>();
+        profiler.attachIndicator("scheduled.tasks.count", () -> (long) activeTasks.size());
     }
 
     /**
@@ -48,15 +51,15 @@ public class ReschedulableScheduler {
                 startDelay,
                 task,
                 executorService,
-                this::handleCancelledTaskWrapper
+                this::handleCancelledTask
         );
-        activeTaskWrappers.add(taskWrapper);
+        activeTasks.add(taskWrapper);
         return taskWrapper.launch();
     }
 
-    private void handleCancelledTaskWrapper(SelfSchedulableTaskWrapper cancelledWrapper) {
-        if(!shutdownInvoked) { //to avoid ConcurrentModificationException during tasks cancellation on shutdown
-            activeTaskWrappers.remove(cancelledWrapper);
+    private void handleCancelledTask(SelfSchedulableTaskWrapper cancelledWrapper) {
+        if (!shutdownInvoked) { //to avoid ConcurrentModificationException during tasks cancellation on shutdown
+            activeTasks.remove(cancelledWrapper);
         }
     }
 
@@ -77,7 +80,7 @@ public class ReschedulableScheduler {
     public void shutdown() {
         shutdownInvoked = true;
         executorService.shutdown();
-        for(SelfSchedulableTaskWrapper taskWrapper : activeTaskWrappers) {
+        for (SelfSchedulableTaskWrapper taskWrapper : activeTasks) {
             taskWrapper.cancel(false);
         }
     }
@@ -90,7 +93,7 @@ public class ReschedulableScheduler {
     public void shutdownNow() {
         shutdownInvoked = true;
         executorService.shutdownNow();
-        for(SelfSchedulableTaskWrapper taskWrapper : activeTaskWrappers) {
+        for (SelfSchedulableTaskWrapper taskWrapper : activeTasks) {
             taskWrapper.cancel(true);
         }
     }
@@ -142,7 +145,7 @@ public class ReschedulableScheduler {
             //Preventing concurrent task launch for the case when
             // previously launched task still working,
             // schedule changed and triggered new scheduled task to launch
-            if(!taskIsRunning.compareAndSet(false, true)){
+            if (!taskIsRunning.compareAndSet(false, true)) {
                 log.trace("Preventing concurrent task launch; scheduledFuture={} with hash={}",
                         scheduledFuture, System.identityHashCode(scheduledFuture));
                 return;

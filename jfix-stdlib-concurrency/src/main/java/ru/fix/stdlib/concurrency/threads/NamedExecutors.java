@@ -42,7 +42,7 @@ public class NamedExecutors {
                 poolName,
                 maxPoolSize,
                 profiler
-        ));
+        ), profiler);
     }
 
     public static ReschedulableScheduler newSingleThreadScheduler(String poolName,
@@ -51,7 +51,7 @@ public class NamedExecutors {
                 poolName,
                 DynamicProperty.of(1),
                 profiler
-        ));
+        ), profiler);
     }
 
     public static ProfiledScheduledThreadPoolExecutor newScheduledExecutor(String poolName,
