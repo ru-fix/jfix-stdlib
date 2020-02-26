@@ -121,10 +121,12 @@ public class ReschedulableScheduler {
             // previously launched task still working,
             // schedule changed and triggered new scheduled task to launch
             if(!taskIsRunning.compareAndSet(false, true)){
-                log.trace("Preventing concurrent task launch; scheduledFuture={}", scheduledFuture);
+                log.trace("Preventing concurrent task launch; scheduledFuture={} with hash={}",
+                        scheduledFuture, System.identityHashCode(scheduledFuture));
                 return;
             }
-            log.trace("Set taskIsRunning true; scheduledFuture={}", scheduledFuture);
+            log.trace("taskIsRunning flag is set to true; scheduledFuture={} with hash={}",
+                    scheduledFuture, System.identityHashCode(scheduledFuture));
 
 
             ScheduleSettings currSettings = this.settings;
@@ -173,7 +175,8 @@ public class ReschedulableScheduler {
                 log.error("ReschedulableScheduler task failed due to: " + exc.getMessage(), exc);
 
             } finally {
-                log.trace("Set taskIsRunning false; scheduledFuture={}", scheduledFuture);
+                log.trace("Set taskIsRunning flag to false; scheduledFuture={} with hash={}",
+                        scheduledFuture, System.identityHashCode(scheduledFuture));
                 taskIsRunning.compareAndSet(true, false);
 
                 checkPreviousScheduleAndRestartTask(schedule.get());
