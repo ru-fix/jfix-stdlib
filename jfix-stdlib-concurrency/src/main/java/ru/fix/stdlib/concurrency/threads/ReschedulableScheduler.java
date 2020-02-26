@@ -5,8 +5,8 @@ import org.slf4j.LoggerFactory;
 import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.dynamic.property.api.DynamicPropertyListener;
 
-import java.util.ArrayList;
-import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -21,7 +21,7 @@ public class ReschedulableScheduler {
 
     private final ScheduledExecutorService executorService;
 
-    private Collection<SelfSchedulableTaskWrapper> taskWrappersCollection;
+    private Set<SelfSchedulableTaskWrapper> activeTaskWrappers;
 
     private boolean shutdownInvoked = false;
 
@@ -31,7 +31,7 @@ public class ReschedulableScheduler {
      */
     public ReschedulableScheduler(ScheduledExecutorService executorService) {
         this.executorService = executorService;
-        this.taskWrappersCollection = new ArrayList<>();
+        this.activeTaskWrappers = new HashSet<>();
     }
 
     /**
@@ -50,13 +50,13 @@ public class ReschedulableScheduler {
                 executorService,
                 this::handleCancelledTaskWrapper
         );
-        taskWrappersCollection.add(taskWrapper);
+        activeTaskWrappers.add(taskWrapper);
         return taskWrapper.launch();
     }
 
     private void handleCancelledTaskWrapper(SelfSchedulableTaskWrapper cancelledWrapper) {
         if(!shutdownInvoked) { //to avoid ConcurrentModificationException during tasks cancellation on shutdown
-            taskWrappersCollection.remove(cancelledWrapper);
+            activeTaskWrappers.remove(cancelledWrapper);
         }
     }
 
@@ -77,7 +77,7 @@ public class ReschedulableScheduler {
     public void shutdown() {
         shutdownInvoked = true;
         executorService.shutdown();
-        for(SelfSchedulableTaskWrapper taskWrapper : taskWrappersCollection) {
+        for(SelfSchedulableTaskWrapper taskWrapper : activeTaskWrappers) {
             taskWrapper.cancel(false);
         }
     }
@@ -90,7 +90,7 @@ public class ReschedulableScheduler {
     public void shutdownNow() {
         shutdownInvoked = true;
         executorService.shutdownNow();
-        for(SelfSchedulableTaskWrapper taskWrapper : taskWrappersCollection) {
+        for(SelfSchedulableTaskWrapper taskWrapper : activeTaskWrappers) {
             taskWrapper.cancel(true);
         }
     }
