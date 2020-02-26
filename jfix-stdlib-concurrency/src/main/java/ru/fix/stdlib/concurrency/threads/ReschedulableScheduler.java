@@ -26,11 +26,10 @@ public class ReschedulableScheduler {
     private final Profiler profiler;
 
     /**
-     * ReschedulableScheduler based on given executorService
-     * It would be better to use {@link ProfiledScheduledThreadPoolExecutor} as executorService
+     * ReschedulableScheduler based on {@link ProfiledScheduledThreadPoolExecutor} created with given parameters
      */
-    public ReschedulableScheduler(ScheduledExecutorService executorService, Profiler profiler) {
-        this.executorService = executorService;
+    public ReschedulableScheduler(String poolName, DynamicProperty<Integer> maxPoolSize, Profiler profiler) {
+        this.executorService = new ProfiledScheduledThreadPoolExecutor(poolName, maxPoolSize, profiler);
         this.activeTasks = ConcurrentHashMap.newKeySet();
         this.profiler = profiler;
         profiler.attachIndicator(THREAD_POOL_SIZE_INDICATOR, () -> (long) activeTasks.size());

@@ -38,20 +38,20 @@ public class NamedExecutors {
     public static ReschedulableScheduler newScheduler(String poolName,
                                                       DynamicProperty<Integer> maxPoolSize,
                                                       Profiler profiler) {
-        return new ReschedulableScheduler(new ProfiledScheduledThreadPoolExecutor(
+        return new ReschedulableScheduler(
                 poolName,
                 maxPoolSize,
                 profiler
-        ), profiler);
+        );
     }
 
     public static ReschedulableScheduler newSingleThreadScheduler(String poolName,
                                                                   Profiler profiler) {
-        return new ReschedulableScheduler(new ProfiledScheduledThreadPoolExecutor(
+        return new ReschedulableScheduler(
                 poolName,
                 DynamicProperty.of(1),
                 profiler
-        ), profiler);
+        );
     }
 
     public static ProfiledScheduledThreadPoolExecutor newScheduledExecutor(String poolName,
