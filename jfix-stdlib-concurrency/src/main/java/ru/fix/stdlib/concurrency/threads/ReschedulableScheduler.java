@@ -56,12 +56,6 @@ public class ReschedulableScheduler {
         return taskWrapper.launch();
     }
 
-    private void handleCancelledTask(SelfSchedulableTaskWrapper cancelledWrapper) {
-        if (!shutdownInvoked) { //to avoid ConcurrentModificationException during tasks cancellation on shutdown
-            activeTasks.remove(cancelledWrapper);
-        }
-    }
-
     /**
      * change execution by schedule type with start delay 0
      *
@@ -69,6 +63,12 @@ public class ReschedulableScheduler {
      */
     public ScheduledFuture<?> schedule(DynamicProperty<Schedule> schedule, Runnable task) {
         return schedule(schedule, DEFAULT_START_DELAY, task);
+    }
+
+    private void handleCancelledTask(SelfSchedulableTaskWrapper cancelledWrapper) {
+        if (!shutdownInvoked) { //to avoid ConcurrentModificationException during tasks cancellation on shutdown
+            activeTasks.remove(cancelledWrapper);
+        }
     }
 
     /**
