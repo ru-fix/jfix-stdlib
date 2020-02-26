@@ -6,7 +6,6 @@ import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.dynamic.property.api.DynamicPropertyListener;
 
-import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -19,12 +18,12 @@ public class ReschedulableScheduler {
     private static final Logger log = LoggerFactory.getLogger(ReschedulableScheduler.class);
 
     private static final long DEFAULT_START_DELAY = 0;
+    private static final String THREAD_POOL_SIZE_INDICATOR = "scheduled.tasks.count";
 
     private final ScheduledExecutorService executorService;
 
     private final Set<SelfSchedulableTaskWrapper> activeTasks;
-
-    private boolean shutdownInvoked = false;
+    private final Profiler profiler;
 
     /**
      * ReschedulableScheduler based on given executorService
@@ -32,8 +31,9 @@ public class ReschedulableScheduler {
      */
     public ReschedulableScheduler(ScheduledExecutorService executorService, Profiler profiler) {
         this.executorService = executorService;
-        this.activeTasks = new HashSet<>();
-        profiler.attachIndicator("scheduled.tasks.count", () -> (long) activeTasks.size());
+        this.activeTasks = ConcurrentHashMap.newKeySet();
+        this.profiler = profiler;
+        profiler.attachIndicator(THREAD_POOL_SIZE_INDICATOR, () -> (long) activeTasks.size());
     }
 
     /**
@@ -50,8 +50,9 @@ public class ReschedulableScheduler {
                 startDelay,
                 task,
                 executorService,
-                this::handleCancelledTask
+                activeTasks::remove
         );
+
         activeTasks.add(taskWrapper);
         return taskWrapper.launch();
     }
@@ -65,23 +66,15 @@ public class ReschedulableScheduler {
         return schedule(schedule, DEFAULT_START_DELAY, task);
     }
 
-    private void handleCancelledTask(SelfSchedulableTaskWrapper cancelledWrapper) {
-        if (!shutdownInvoked) { //to avoid ConcurrentModificationException during tasks cancellation on shutdown
-            activeTasks.remove(cancelledWrapper);
-        }
-    }
-
     /**
      * shutdown scheduler's executorService
      * <p>
      * shorter version of {@code getExecutorService().shutdown()}
      */
     public void shutdown() {
-        shutdownInvoked = true;
         executorService.shutdown();
-        for (SelfSchedulableTaskWrapper taskWrapper : activeTasks) {
-            taskWrapper.cancel(false);
-        }
+        cancelAllTasks(false);
+        profiler.detachIndicator(THREAD_POOL_SIZE_INDICATOR);
     }
 
     /**
@@ -90,10 +83,19 @@ public class ReschedulableScheduler {
      * shorter version of {@code getExecutorService().shutdownNow()}
      */
     public void shutdownNow() {
-        shutdownInvoked = true;
         executorService.shutdownNow();
-        for (SelfSchedulableTaskWrapper taskWrapper : activeTasks) {
-            taskWrapper.cancel(true);
+        cancelAllTasks(true);
+        profiler.detachIndicator(THREAD_POOL_SIZE_INDICATOR);
+    }
+
+    private void cancelAllTasks(boolean mayInterruptIfRunning) {
+        synchronized (activeTasks) {
+            activeTasks.forEach(taskWrapper -> taskWrapper.cancel(mayInterruptIfRunning));
+        }
+        while(!activeTasks.isEmpty()){
+            synchronized (activeTasks) {
+                activeTasks.iterator().next().cancel(mayInterruptIfRunning);
+            }
         }
     }
 
@@ -149,9 +151,6 @@ public class ReschedulableScheduler {
                         scheduledFuture, System.identityHashCode(scheduledFuture));
                 return;
             }
-            log.trace("taskIsRunning flag is set to true; scheduledFuture={} with hash={}",
-                    scheduledFuture, System.identityHashCode(scheduledFuture));
-
 
             ScheduleSettings currSettings = this.settings;
             if (currSettings.type == Schedule.Type.RATE) {
@@ -187,12 +186,17 @@ public class ReschedulableScheduler {
                 // skip wrong invocations
                 long now = System.currentTimeMillis();
                 if (now < lastExecutedTs + currSettings.periodValue - currSettings.safeDelay()) {
+                    log.trace("skip wrong invocation; now={}, lastExecutedTs={}, currSettings={}; scheduledFuture={} with hash={}",
+                            now, lastExecutedTs, currSettings,
+                            scheduledFuture, System.identityHashCode(scheduledFuture));
                     return;
                 }
                 lastExecutedTs = now;
             }
 
             try {
+                log.trace("running task; scheduledFuture={} with hash={}",
+                        scheduledFuture, System.identityHashCode(scheduledFuture));
                 task.run();
 
             } catch (Throwable exc) {
@@ -214,8 +218,14 @@ public class ReschedulableScheduler {
 
             if (!previousSchedule.equals(schedule)) {
                 previousSchedule = schedule;
+                log.trace("checkPreviousScheduleAndRestartTask cancelling  scheduledFuture {} with hash={}",
+                        scheduledFuture, System.identityHashCode(scheduledFuture));
+
                 this.scheduledFuture.cancel(false);
                 this.scheduledFuture = schedule(this, schedule, this.startDelay);
+
+                log.trace("checkPreviousScheduleAndRestartTask new scheduledFuture {} with hash={} is scheduled",
+                        scheduledFuture, System.identityHashCode(scheduledFuture));
             }
         }
 
