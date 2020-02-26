@@ -2,7 +2,6 @@ package ru.fix.stdlib.concurrency.threads;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.fix.aggregating.profiler.IndicationProvider;
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.dynamic.property.api.DynamicPropertyListener;
