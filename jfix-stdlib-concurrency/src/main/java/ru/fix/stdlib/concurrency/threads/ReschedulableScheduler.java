@@ -3,9 +3,13 @@ package ru.fix.stdlib.concurrency.threads;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.fix.dynamic.property.api.DynamicProperty;
+import ru.fix.dynamic.property.api.DynamicPropertyListener;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 /**
  * Wrapper under runnable task. Save and check schedule value. If value was changed, task will be rescheduled.
@@ -17,12 +21,17 @@ public class ReschedulableScheduler {
 
     private final ScheduledExecutorService executorService;
 
+    private Collection<SelfSchedulableTaskWrapper> taskWrappersCollection;
+
+    private boolean shutdownInvoked = false;
+
     /**
      * ReschedulableScheduler based on given executorService
      * It would be better to use {@link ProfiledScheduledThreadPoolExecutor} as executorService
      */
     public ReschedulableScheduler(ScheduledExecutorService executorService) {
         this.executorService = executorService;
+        this.taskWrappersCollection = new ArrayList<>();
     }
 
     /**
@@ -38,9 +47,17 @@ public class ReschedulableScheduler {
                 scheduleSupplier,
                 startDelay,
                 task,
-                executorService
+                executorService,
+                this::handleCancelledTaskWrapper
         );
+        taskWrappersCollection.add(taskWrapper);
         return taskWrapper.launch();
+    }
+
+    private void handleCancelledTaskWrapper(SelfSchedulableTaskWrapper cancelledWrapper) {
+        if(!shutdownInvoked) { //to avoid ConcurrentModificationException during tasks cancellation on shutdown
+            taskWrappersCollection.remove(cancelledWrapper);
+        }
     }
 
     /**
@@ -49,13 +66,7 @@ public class ReschedulableScheduler {
      * @return result task from executionService
      */
     public ScheduledFuture<?> schedule(DynamicProperty<Schedule> schedule, Runnable task) {
-        SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
-                schedule,
-                DEFAULT_START_DELAY,
-                task,
-                executorService
-        );
-        return taskWrapper.launch();
+        return schedule(schedule, DEFAULT_START_DELAY, task);
     }
 
     /**
@@ -64,7 +75,11 @@ public class ReschedulableScheduler {
      * shorter version of {@code getExecutorService().shutdown()}
      */
     public void shutdown() {
+        shutdownInvoked = true;
         executorService.shutdown();
+        for(SelfSchedulableTaskWrapper taskWrapper : taskWrappersCollection) {
+            taskWrapper.cancel(false);
+        }
     }
 
     /**
@@ -73,7 +88,11 @@ public class ReschedulableScheduler {
      * shorter version of {@code getExecutorService().shutdownNow()}
      */
     public void shutdownNow() {
+        shutdownInvoked = true;
         executorService.shutdownNow();
+        for(SelfSchedulableTaskWrapper taskWrapper : taskWrappersCollection) {
+            taskWrapper.cancel(true);
+        }
     }
 
     /**
@@ -89,6 +108,7 @@ public class ReschedulableScheduler {
 
         private Schedule previousSchedule;
         private DynamicProperty<Schedule> schedule;
+        private DynamicPropertyListener<Schedule> scheduleListener;
         private final long startDelay;
 
         private ScheduledFuture<?> scheduledFuture;
@@ -96,6 +116,7 @@ public class ReschedulableScheduler {
         private final Runnable task;
         private final ReschedulableSchedullerFuture reschedulableFuture =
                 new ReschedulableSchedullerFuture(this);
+        private Consumer<SelfSchedulableTaskWrapper> cancelHandler;
 
         private final ScheduledExecutorService executorService;
 
@@ -106,12 +127,13 @@ public class ReschedulableScheduler {
         public SelfSchedulableTaskWrapper(DynamicProperty<Schedule> schedule,
                                           long startDelay,
                                           Runnable task,
-                                          ScheduledExecutorService executorService) {
+                                          ScheduledExecutorService executorService,
+                                          Consumer<SelfSchedulableTaskWrapper> cancelHandler) {
             this.schedule = schedule;
-            this.schedule.addListener((oldVal, newVal) -> this.checkPreviousScheduleAndRestartTask(newVal));
             this.startDelay = startDelay;
             this.task = task;
             this.executorService = executorService;
+            this.cancelHandler = cancelHandler;
         }
 
         @Override
@@ -196,6 +218,8 @@ public class ReschedulableScheduler {
         }
 
         synchronized ScheduledFuture<?> launch() {
+            this.scheduleListener = (oldVal, newVal) -> this.checkPreviousScheduleAndRestartTask(newVal);
+            this.schedule.addListener(this.scheduleListener);
             Schedule schedule = this.schedule.get();
 
             this.scheduledFuture = schedule(this, schedule, this.startDelay);
@@ -232,7 +256,9 @@ public class ReschedulableScheduler {
         public synchronized void cancel(boolean mayInterruptIfRunning) {
             log.trace("cancelling scheduledFuture {} with hash={}",
                     scheduledFuture, System.identityHashCode(scheduledFuture));
+            schedule.removeListener(this.scheduleListener);
             scheduledFuture.cancel(mayInterruptIfRunning);
+            cancelHandler.accept(this);
         }
     }
 
