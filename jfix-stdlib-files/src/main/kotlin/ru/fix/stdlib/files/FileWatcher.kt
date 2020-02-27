@@ -1,20 +1,19 @@
 package ru.fix.stdlib.files
 
-import org.apache.logging.log4j.kotlin.Logging
+import mu.KotlinLogging
 import java.nio.file.*
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 
+private val logger = KotlinLogging.logger{}
 /**
  * @param filePaths List of file paths to listen
  */
 class FileWatcher : AutoCloseable {
 
-    companion object : Logging
-
     private val watchThread = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, FileWatcher.javaClass.name)
+        Thread(runnable, FileWatcher::class.java.name)
     }
 
     val dirToKey = mutableMapOf<Path, WatchKey>()

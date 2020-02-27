@@ -1,6 +1,6 @@
 package ru.fix.stdlib.files
 
-import org.apache.logging.log4j.kotlin.Logging
+import mu.KotlinLogging
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
@@ -9,8 +9,9 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
 
+private val logger = KotlinLogging.logger {  }
+
 class FileWatcherTest {
-    companion object : Logging
 
     @CsvSource("1", "3")
     @ParameterizedTest
