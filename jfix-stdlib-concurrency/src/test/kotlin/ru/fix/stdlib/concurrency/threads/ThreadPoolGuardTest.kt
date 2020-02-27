@@ -90,6 +90,6 @@ class ThreadPoolGuardTest {
         futures.forEach { it.join() }
 
         assertThat(dumpReceiver.get(), containsSubstring(this::class.java.simpleName))
-        assertThat(dumpReceiver.get(), containsSubstring("Semaphore"))
+        assertThat(dumpReceiver.get(), containsSubstring("acquire"))
     }
 }
