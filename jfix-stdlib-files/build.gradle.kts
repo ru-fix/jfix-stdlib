@@ -4,7 +4,7 @@ plugins {
 }
 
 dependencies {
-    implementation(Libs.log4j_kotlin)
+    implementation(Libs.kotlin_logging)
     implementation(Libs.kotlin_jdk8)
     implementation(Libs.kotlin_stdlib)
     implementation(Libs.kotlin_reflect)
@@ -16,4 +16,5 @@ dependencies {
     testRuntimeOnly(Libs.junit_engine)
 
     testRuntimeOnly(Libs.log4j_core)
+    testRuntimeOnly(Libs.slf4j_over_log4j)
 }

@@ -7,6 +7,7 @@ dependencies {
 
     api(Libs.dynamic_property)
     api(Libs.aggregating_profiler)
+    api(Libs.kotlin_logging)
 
     implementation(Libs.kotlin_jdk8)
     implementation(Libs.kotlin_stdlib)
@@ -17,7 +18,9 @@ dependencies {
     testImplementation(Libs.junit_api)
     testImplementation(Libs.junit_params)
     testRuntimeOnly(Libs.junit_engine)
-    testRuntimeOnly(Libs.slf4j_simple)
+
+    testRuntimeOnly(Libs.log4j_core)
+    testRuntimeOnly(Libs.slf4j_over_log4j)
 
 
 }

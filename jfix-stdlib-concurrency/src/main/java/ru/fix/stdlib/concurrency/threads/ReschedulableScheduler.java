@@ -15,29 +15,31 @@ import java.util.function.Consumer;
  * Wrapper under runnable task. Save and check schedule value. If value was changed, task will be rescheduled.
  */
 public class ReschedulableScheduler implements AutoCloseable {
-    private static final Logger log = LoggerFactory.getLogger(ReschedulableScheduler.class);
-
     private static final long DEFAULT_START_DELAY = 0;
-    private static final String THREAD_POOL_SIZE_INDICATOR = "scheduled.tasks.count";
 
     private final ScheduledExecutorService executorService;
 
     private final Set<SelfSchedulableTaskWrapper> activeTasks;
     private final Profiler profiler;
     private final AtomicBoolean isShutdown = new AtomicBoolean(false);
+    private final Logger log;
+    private final String scheduledTasksIndicatorName;
 
     /**
      * ReschedulableScheduler based on {@link ProfiledScheduledThreadPoolExecutor} created with given parameters
+     * @param poolName will be used as
      */
     public ReschedulableScheduler(String poolName, DynamicProperty<Integer> maxPoolSize, Profiler profiler) {
+        log = LoggerFactory.getLogger(ReschedulableScheduler.class.getName() + "." + poolName);
         this.executorService = new ProfiledScheduledThreadPoolExecutor(poolName, maxPoolSize, profiler);
         this.activeTasks = ConcurrentHashMap.newKeySet();
         this.profiler = profiler;
-        profiler.attachIndicator(THREAD_POOL_SIZE_INDICATOR, () -> (long) activeTasks.size());
+        scheduledTasksIndicatorName = "scheduled.pool." + poolName + ".tasks.count";
+        profiler.attachIndicator(scheduledTasksIndicatorName, () -> (long) activeTasks.size());
     }
 
     private void detachIndicators() {
-        profiler.detachIndicator(THREAD_POOL_SIZE_INDICATOR);
+        profiler.detachIndicator(scheduledTasksIndicatorName);
     }
 
     /**
@@ -59,7 +61,8 @@ public class ReschedulableScheduler implements AutoCloseable {
                 startDelay,
                 task,
                 executorService,
-                activeTasks::remove
+                activeTasks::remove,
+                log
         );
 
         activeTasks.add(taskWrapper);
@@ -116,6 +119,8 @@ public class ReschedulableScheduler implements AutoCloseable {
 
     private static class SelfSchedulableTaskWrapper implements Runnable {
 
+        private final Logger log;
+
         private Schedule previousSchedule;
         private DynamicProperty<Schedule> schedule;
         private DynamicPropertyListener<Schedule> scheduleListener;
@@ -138,12 +143,14 @@ public class ReschedulableScheduler implements AutoCloseable {
                                           long startDelay,
                                           Runnable task,
                                           ScheduledExecutorService executorService,
-                                          Consumer<SelfSchedulableTaskWrapper> cancelHandler) {
+                                          Consumer<SelfSchedulableTaskWrapper> cancelHandler,
+                                          Logger log) {
             this.schedule = schedule;
             this.startDelay = startDelay;
             this.task = task;
             this.executorService = executorService;
             this.cancelHandler = cancelHandler;
+            this.log = log;
         }
 
         @Override

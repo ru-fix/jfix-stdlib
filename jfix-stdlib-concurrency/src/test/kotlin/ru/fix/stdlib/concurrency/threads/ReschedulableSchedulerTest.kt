@@ -3,6 +3,8 @@ package ru.fix.stdlib.concurrency.threads
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import ru.fix.aggregating.profiler.AggregatingProfiler
+import ru.fix.aggregating.profiler.Identity
 import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.dynamic.property.api.AtomicProperty
 import ru.fix.dynamic.property.api.DynamicProperty
@@ -16,6 +18,7 @@ import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+
 
 class ReschedulableSchedulerTest {
 
@@ -56,7 +59,6 @@ class ReschedulableSchedulerTest {
         scheduler.shutdown()
         assertTrue(scheduler.awaitTermination(10, SECONDS))
     }
-
 
 
     @Test
@@ -169,7 +171,7 @@ class ReschedulableSchedulerTest {
         })
 
         assertTrue(countDownLatchOfFirstTaskExecution.await(20, SECONDS))
-        assertEquals(1, taskExecutionCounter.get() )
+        assertEquals(1, taskExecutionCounter.get())
 
         //Give scheduler time to schedule next task (task will be planned with hour dely)
         assertFalse(countDownLatch.await(1, SECONDS))
@@ -183,19 +185,19 @@ class ReschedulableSchedulerTest {
     }
 
     @Test
-    fun `reschedule does not start new task if previous task did not compete `(){
+    fun `reschedule does not start new task if previous task did not compete `() {
         val scheduler = NamedExecutors.newScheduler("scheduler", DynamicProperty.of(5), NoopProfiler())
         val schedule = AtomicProperty(Schedule.withRate(1))
         val blockFirstTaskLatch = CountDownLatch(1)
         val launchedTasksCount = AtomicInteger()
 
-        scheduler.schedule(schedule){
+        scheduler.schedule(schedule) {
             when (launchedTasksCount.incrementAndGet()) {
                 1 -> blockFirstTaskLatch.await()
             }
         }
 
-        for(i in 1..100) {
+        for (i in 1..100) {
             schedule.set(Schedule.withRate(i.toLong()))
         }
 
@@ -207,5 +209,32 @@ class ReschedulableSchedulerTest {
         blockFirstTaskLatch.countDown()
         scheduler.shutdown()
         assertTrue(scheduler.awaitTermination(1, MINUTES))
+    }
+
+    @Test
+    fun `scheduled tasks tracked via indicator`() {
+        val profiler = AggregatingProfiler()
+        val reporter = profiler.createReporter()
+
+        val scheduler = NamedExecutors.newScheduler("my", DynamicProperty.of(5), profiler)
+        val schedule = AtomicProperty(Schedule.withRate(100_000))
+
+        val futures = (1..12).map {
+            scheduler.schedule(schedule) {
+            }
+        }.toList()
+
+        val identity = Identity("scheduled.pool.my.tasks.count")
+        var report = reporter.buildReportAndReset()
+        assertTrue(report.indicators.containsKey(identity), report.indicators.toString())
+        assertEquals(12L, report.indicators[identity])
+
+        futures.first().cancel(false)
+        report = reporter.buildReportAndReset()
+        assertEquals(11L, report.indicators[identity])
+
+        scheduler.shutdown()
+        report = reporter.buildReportAndReset()
+        assertFalse(report.indicators.containsKey(identity))
     }
 }
