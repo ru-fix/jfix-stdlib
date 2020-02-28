@@ -171,49 +171,50 @@ public class ReschedulableScheduler implements AutoCloseable {
                 return;
             }
 
-            ScheduleSettings currSettings = this.settings;
-            if (currSettings.type == Schedule.Type.RATE) {
-                //
-                // If fixed rate tasks take more time that given rate
-                // then next invocation of task starts to happen immediately
-                // and total invocation rate will exceed rate limit
-                //
-                // Suppose standard java scheduled executor configured with fixed rate once in 10 sec.
-                // If regular task takes 2 sec to execute then actual task execution rate will be as configured:
-                // taskId, start time, end time:
-                // 1: 0-2
-                // 2: 10-12
-                // 3: 20-22
-                // 4: 30-32
-                // 5: 40-42
-                // 6: 50-52
-                //
-                // If first task will take more time, e.g. 33 seconds.
-                // Then standard java schedule will remember how many scheduled task it didn't run.
-                // And it will try to launch skipped tasks immediately as first opportunity occurred.
-                // This will lead to wrong actual task launching rate:
-                // taskId, start time, end time:
-                // 1: 0-33
-                // 2: 33-35
-                // 3: 35-37
-                // 4: 37-39
-                // 5: 40-42
-                // 6: 50-52
-                // In this case tasks 2,3,4 are running with wrong rate.
-                // To fix that we will skip all task invocations that occurred too earlie.
-                //
-                // skip wrong invocations
-                long now = System.currentTimeMillis();
-                if (now < lastExecutedTs + currSettings.periodValue - currSettings.safeDelay()) {
-                    log.trace("skip wrong invocation; now={}, lastExecutedTs={}, currSettings={}; scheduledFuture={} with hash={}",
-                            now, lastExecutedTs, currSettings,
-                            scheduledFuture, System.identityHashCode(scheduledFuture));
-                    return;
-                }
-                lastExecutedTs = now;
-            }
-
             try {
+
+                ScheduleSettings currSettings = this.settings;
+                if (currSettings.type == Schedule.Type.RATE) {
+                    //
+                    // If fixed rate tasks take more time that given rate
+                    // then next invocation of task starts to happen immediately
+                    // and total invocation rate will exceed rate limit
+                    //
+                    // Suppose standard java scheduled executor configured with fixed rate once in 10 sec.
+                    // If regular task takes 2 sec to execute then actual task execution rate will be as configured:
+                    // taskId, start time, end time:
+                    // 1: 0-2
+                    // 2: 10-12
+                    // 3: 20-22
+                    // 4: 30-32
+                    // 5: 40-42
+                    // 6: 50-52
+                    //
+                    // If first task will take more time, e.g. 33 seconds.
+                    // Then standard java schedule will remember how many scheduled task it didn't run.
+                    // And it will try to launch skipped tasks immediately as first opportunity occurred.
+                    // This will lead to wrong actual task launching rate:
+                    // taskId, start time, end time:
+                    // 1: 0-33
+                    // 2: 33-35
+                    // 3: 35-37
+                    // 4: 37-39
+                    // 5: 40-42
+                    // 6: 50-52
+                    // In this case tasks 2,3,4 are running with wrong rate.
+                    // To fix that we will skip all task invocations that occurred too earlie.
+                    //
+                    // skip wrong invocations
+                    long now = System.currentTimeMillis();
+                    if (now < lastExecutedTs + currSettings.periodValue - currSettings.safeDelay()) {
+                        log.trace("skip wrong invocation; now={}, lastExecutedTs={}, currSettings={}; scheduledFuture={} with hash={}",
+                                now, lastExecutedTs, currSettings,
+                                scheduledFuture, System.identityHashCode(scheduledFuture));
+                        return;
+                    }
+                    lastExecutedTs = now;
+                }
+
                 log.trace("running task; scheduledFuture={} with hash={}",
                         scheduledFuture, System.identityHashCode(scheduledFuture));
                 task.run();
@@ -361,6 +362,14 @@ public class ReschedulableScheduler implements AutoCloseable {
                 safeDelay = 30_000;
             }
             return safeDelay;
+        }
+
+        @Override
+        public String toString() {
+            return "ScheduleSettings{" +
+                    "type=" + type +
+                    ", periodValue=" + periodValue +
+                    '}';
         }
     }
 
