@@ -3,7 +3,7 @@ object Vers {
     const val kotlin_coroutines = "1.2.2"
     const val sl4j = "1.7.25"
     const val dokkav = "0.9.18"
-    const val gradle_release_plugin = "1.3.9"
+    const val gradle_release_plugin = "1.3.15"
     const val junit = "5.5.2"
     const val hamkrest = "1.4.2.2"
 
