@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class PendingFutureLimiterTest {
 
     private static final Logger log = LoggerFactory.getLogger(PendingFutureLimiterTest.class);
+    private static final long FUTURE_LIMITER_TIMEOUT_MINUTES = 15;
 
     private final Executor executor = Executors.newFixedThreadPool(20);
     private final AtomicInteger globalCounter = new AtomicInteger();
@@ -54,7 +55,7 @@ public class PendingFutureLimiterTest {
         /**
          * Create limiter with 3 pending tasks max
          */
-        PendingFutureLimiter limiter = new PendingFutureLimiter(3);
+        PendingFutureLimiter limiter = new PendingFutureLimiter(3, TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES));
 
         /**
          * blockingEnqueue 3 tasks without blocking
@@ -113,7 +114,7 @@ public class PendingFutureLimiterTest {
     @Test
     public void enqueue_channelBlockReading_blockUnblock() throws Exception {
         SessionStub sessionStub = new SessionStub();
-        PendingFutureLimiter limiter = new PendingFutureLimiter(3);
+        PendingFutureLimiter limiter = new PendingFutureLimiter(3, TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES));
         limiter.setTresspassingThresholdListener(
                 new PendingFutureLimiter.ThresholdListener() {
                     @Override
@@ -156,7 +157,7 @@ public class PendingFutureLimiterTest {
         /**
          * Create limiter with 3 pending tasks max
          */
-        PendingFutureLimiter limiter = new PendingFutureLimiter(3);
+        PendingFutureLimiter limiter = new PendingFutureLimiter(3, TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES));
 
         CompletableFuture<Void> future = createTask();
         future.handleAsync((any, exc) -> {

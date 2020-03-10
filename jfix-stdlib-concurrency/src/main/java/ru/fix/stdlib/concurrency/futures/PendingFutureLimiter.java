@@ -30,16 +30,6 @@ public class PendingFutureLimiter {
     private ThresholdListener thresholdListener;
 
     /**
-     * @param maxPendingCount - максимальное количество фитч запущенных паралельно
-     * @deprecated используйте {@link #PendingFutureLimiter(int, long)} вместо этого контруктора,
-     * лучше вручную устанавливать значение {@link #maxFutureExecuteTime} в 15 минут
-     */
-    @Deprecated
-    public PendingFutureLimiter(int maxPendingCount) {
-        this(maxPendingCount, TimeUnit.MINUTES.toMillis(15));
-    }
-
-    /**
      * @param maxPendingCount         максимальное количество {@link CompletableFuture} запущенных паралельно
      * @param maxFutureExecuteTimeout максимальное время (в миллисекундах) на выполнение {@link CompletableFuture},
      *                                при достижении данного времени {@link CompletableFuture} будет принудительно
