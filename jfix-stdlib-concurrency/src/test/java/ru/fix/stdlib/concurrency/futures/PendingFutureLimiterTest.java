@@ -115,15 +115,15 @@ public class PendingFutureLimiterTest {
     public void enqueue_channelBlockReading_blockUnblock() throws Exception {
         SessionStub sessionStub = new SessionStub();
         PendingFutureLimiter limiter = new PendingFutureLimiter(3, TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES));
-        limiter.setTresspassingThresholdListener(
+        limiter.setThresholdListener(
                 new PendingFutureLimiter.ThresholdListener() {
                     @Override
-                    public void onLimitReached() {
+                    public void onHiLimitReached() {
                         sessionStub.setReadable(false);
                     }
 
                     @Override
-                    public void onLimitSubceed() {
+                    public void onLowLimitSubceed() {
                         sessionStub.setReadable(true);
                     }
                 });

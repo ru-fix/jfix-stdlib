@@ -35,6 +35,7 @@ public class PendingFutureLimiter {
      *                                when this timeout is reached, {@link CompletableFuture} queue will be cleaned,
      *                                and on the {@link CompletableFuture} itself
      *                                {@link CompletableFuture#completeExceptionally(Throwable)} will be invoked
+     *
      */
     public PendingFutureLimiter(int maxPendingCount, long maxFutureExecuteTimeout) {
         this.maxPendingCount = maxPendingCount;
@@ -96,7 +97,7 @@ public class PendingFutureLimiter {
         this.maxFutureExecuteTime = maxFutureExecuteTime;
     }
 
-    public void setTresspassingThresholdListener(ThresholdListener thresholdListener) {
+    public void setThresholdListener(ThresholdListener thresholdListener) {
         this.thresholdListener = thresholdListener;
     }
 
@@ -105,13 +106,13 @@ public class PendingFutureLimiter {
      * <p/>
      * ThresholdFactor is a ratio of free slots to maxPendingCount,
      * When it is reached the signal about critical workload subceeded will be sent to
-     * {@link ThresholdListener#onLimitSubceed()}.
+     * {@link ThresholdListener#onLowLimitSubceed()}.
      * I. e., to get a to get a threshold 800 with maxPendingCount 1000,
      * should set thresholdFactor = 0.2
      *
      * @param thresholdFactor % of free slots from maxPendingCount,
      *                        when it is reached the signal about critical workload subceeded will be sent
-     *                        to {@link ThresholdListener#onLimitSubceed()}
+     *                        to {@link ThresholdListener#onLowLimitSubceed()}
      */
     public PendingFutureLimiter changeThresholdFactor(float thresholdFactor) {
 
@@ -162,11 +163,11 @@ public class PendingFutureLimiter {
     protected <T> CompletableFuture<T> internalEnqueue(CompletableFuture<T> future,
                                                        boolean needToBlock) throws InterruptedException {
         if (counter.get() == maxPendingCount && thresholdListener != null) {
-            thresholdListener.onLimitReached();
+            thresholdListener.onHiLimitReached();
         }
 
         if (needToBlock) {
-            awaitAndPurge();
+            awaitOpportunityToEnqueueAndPurge();
         }
 
         counter.incrementAndGet();
@@ -180,7 +181,7 @@ public class PendingFutureLimiter {
 
             if (value == 0 || value == getThreshold()) {
                 if (thresholdListener != null) {
-                    thresholdListener.onLimitSubceed();
+                    thresholdListener.onLowLimitSubceed();
                 }
                 synchronized (counter) {
                     counter.notifyAll();
@@ -191,11 +192,11 @@ public class PendingFutureLimiter {
         return future;
     }
 
-    private void awaitAndPurge() throws InterruptedException {
+    private void awaitOpportunityToEnqueueAndPurge() throws InterruptedException {
         synchronized (counter) {
             while (counter.get() >= maxPendingCount && maxFutureExecuteTime > 0) {
                 counter.wait(waitTimeToCheckSizeQueue);
-                releaseEnqueued();
+                releaseTimeoutedFutures();
             }
         }
     }
@@ -212,12 +213,15 @@ public class PendingFutureLimiter {
         synchronized (counter) {
             while (counter.get() > 0) {
                 counter.wait(waitTimeToCheckSizeQueue);
-                releaseEnqueued();
+                releaseTimeoutedFutures();
             }
         }
     }
 
-    private void releaseEnqueued() {
+    private void releaseTimeoutedFutures() {
+        if (maxFutureExecuteTime == 0) {
+            return;
+        }
         String errorMessage = "Timeout exception. Completable future did not complete for at least "
                 + maxFutureExecuteTime + " milliseconds. Pending count: " + getPendingCount();
 
@@ -237,12 +241,12 @@ public class PendingFutureLimiter {
          * Called, whet the inner counter's value reaches maxPendingCount
          * and executed in the same thread withe invoking method.
          */
-        void onLimitReached();
+        void onHiLimitReached();
 
         /**
          * Called, when the pending futures amount = maxPendingCount * thresholdFactor
          * executed in the separate thread
          */
-        void onLimitSubceed();
+        void onLowLimitSubceed();
     }
 }
