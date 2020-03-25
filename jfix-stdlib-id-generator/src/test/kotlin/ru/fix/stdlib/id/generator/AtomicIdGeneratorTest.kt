@@ -273,6 +273,25 @@ class AtomicIdGeneratorTest{
         assertEquals(generatedIds.toSet().size, generatedIds.size)
     }
 
+    @Test
+    fun `extracting parts from generated id`() {
+        val clock = Mockito.mock(Clock::class.java)
+        `when`(clock.millis()).thenReturn(0b111000)
+
+        val g = AtomicIdGenerator(BitsConfiguration(40,3,2), 0, 0b10, clock)
+
+        for (i in 1..5) {
+            val id = g.nextId()
+
+            // time must be the same
+            assertEquals(0b111000, g.extractTime(id))
+            // counter must increase
+            assertEquals(i.toLong(), g.extractCounter(id))
+            // server id must be the same
+            assertEquals(0b10, g.extractServerId(id))
+        }
+    }
+
     private fun toBinaryString(value: Long): String {
         return fillZeros(value.toString(2))
     }
