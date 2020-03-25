@@ -284,11 +284,11 @@ class AtomicIdGeneratorTest{
             val id = g.nextId()
 
             // time must be the same
-            assertEquals(0b111000, g.extractTime(id))
+            assertEquals(0b111000, g.extractTimePart(id))
             // counter must increase
-            assertEquals(i.toLong(), g.extractCounter(id))
+            assertEquals(i.toLong(), g.extractCounterPart(id))
             // server id must be the same
-            assertEquals(0b10, g.extractServerId(id))
+            assertEquals(0b10, g.extractServerIdPart(id))
         }
     }
 

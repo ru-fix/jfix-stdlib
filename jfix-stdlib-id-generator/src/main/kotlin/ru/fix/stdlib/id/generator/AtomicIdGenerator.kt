@@ -101,14 +101,14 @@ class AtomicIdGenerator(
         }
     }
 
-    fun extractTime(id: Long): Long {
+    fun extractTimePart(id: Long): Long {
         val shiftBits = bitsConfig.serverPartBits + bitsConfig.counterPartBits
         return startOfTime + extractPart(id, shiftBits, bitsConfig.timePartMask)
     }
 
-    fun extractServerId(id: Long) = extractPart(id, 0, bitsConfig.serverPartMask)
+    fun extractServerIdPart(id: Long) = extractPart(id, 0, bitsConfig.serverPartMask)
 
-    fun extractCounter(id: Long) = extractPart(id, bitsConfig.serverPartBits, bitsConfig.counterPartMask)
+    fun extractCounterPart(id: Long) = extractPart(id, bitsConfig.serverPartBits, bitsConfig.counterPartMask)
 
     private fun extractPart(id: Long, shiftBits: Int, mask: Long) = id shr shiftBits and mask
 }
