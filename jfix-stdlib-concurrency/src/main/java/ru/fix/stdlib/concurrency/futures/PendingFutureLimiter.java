@@ -13,7 +13,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
- * maxPendingCount - максимальное число pending futures которые могут быть зарегистрированы в limiter
+ * maxPendingCount - max amount of pending futures could be registered in limiter instance
  *
  * @author Kamil Asfandiyarov
  */
@@ -30,10 +30,11 @@ public class PendingFutureLimiter {
     private ThresholdListener thresholdListener;
 
     /**
-     * @param maxPendingCount         максимальное количество {@link CompletableFuture} запущенных паралельно
-     * @param maxFutureExecuteTimeout максимальное время (в миллисекундах) на выполнение {@link CompletableFuture},
-     *                                при достижении данного времени {@link CompletableFuture} будет принудительно
-     *                                завершена с помощью {@link CompletableFuture#completeExceptionally(Throwable)}
+     * @param maxPendingCount         max amount of {@link CompletableFuture} started in parallel
+     * @param maxFutureExecuteTimeout maximum time (milliseconds) on {@link CompletableFuture} execution,
+     *                                when this timeout is reached, {@link CompletableFuture} queue will be cleaned,
+     *                                and on the {@link CompletableFuture} itself
+     *                                {@link CompletableFuture#completeExceptionally(Throwable)} will be invoked
      */
     public PendingFutureLimiter(int maxPendingCount, long maxFutureExecuteTimeout) {
         this.maxPendingCount = maxPendingCount;
@@ -41,10 +42,11 @@ public class PendingFutureLimiter {
     }
 
     /**
-     * @param maxPendingCount         максимальное количество {@link CompletableFuture} запущенных паралельно
-     * @param maxFutureExecuteTimeout максимальное время (в миллисекундах) на выполнение {@link CompletableFuture},
-     *                                при достижении данного времени {@link CompletableFuture} будет принудительно
-     *                                завершена с помощью {@link CompletableFuture#completeExceptionally(Throwable)}
+     * @param maxPendingCount         max amount of {@link CompletableFuture} started in parallel
+     * @param maxFutureExecuteTimeout maximum time (milliseconds) on {@link CompletableFuture} execution,
+     *                                when this timeout is reached, {@link CompletableFuture} queue will be cleaned,
+     *                                and on the {@link CompletableFuture} itself
+     *                                {@link CompletableFuture#completeExceptionally(Throwable)} will be invoked
      */
     public PendingFutureLimiter(DynamicProperty<Integer> maxPendingCount, DynamicProperty<Long> maxFutureExecuteTimeout) {
         this.maxPendingCount = maxPendingCount.get();
@@ -99,17 +101,17 @@ public class PendingFutureLimiter {
     }
 
     /**
-     * Устанавливает новое значение для thresholdFactor.
+     * Sets the new value for thresholdFactor.
      * <p/>
-     * ThresholdFactor задается как отношени свободных слотов к maxPendingCount,
-     * при достижении которого будет подан сигнал о спаде критической нагрузки
-     * в {@link ThresholdListener#onLimitSubceed()}.
-     * Например, чтобы получить threshold 800 при maxPendingCount 1000,
-     * нужно задать thresholdFactor = 0.2
+     * ThresholdFactor is a ratio of free slots to maxPendingCount,
+     * When it is reached the signal about critical workload subceeded will be sent to
+     * {@link ThresholdListener#onLimitSubceed()}.
+     * I. e., to get a to get a threshold 800 with maxPendingCount 1000,
+     * should set thresholdFactor = 0.2
      *
-     * @param thresholdFactor % свободных слотов от maxPendingCount,
-     *                        при достижении которого будет подан сигнал о спаде критической нагрузки
-     *                        в {@link ThresholdListener#onLimitSubceed()}
+     * @param thresholdFactor % of free slots from maxPendingCount,
+     *                        when it is reached the signal about critical workload subceeded will be sent
+     *                        to {@link ThresholdListener#onLimitSubceed()}
      */
     public PendingFutureLimiter changeThresholdFactor(float thresholdFactor) {
 
@@ -129,33 +131,33 @@ public class PendingFutureLimiter {
     }
 
     /**
-     * Неограниченное добавление future в очередь
+     * Unlimited adding of futures to the queue
      */
     public <T> CompletableFuture<T> enqueueUnlimited(CompletableFuture<T> future) throws InterruptedException {
         return internalEnqueue(future, false);
     }
 
     /**
-     * Ограниченное добавление future в очередь.
-     * Если очередь уже достигла maxPendingCount то блокирует вызвавший поток до освобождения очереди,
-     * Далее, если maxFutureExecuteTime > 0, то по достижении этого времени выполнения в милисекундах,
-     *      future удаляется из очереди и создаётся возможность для добавления в неё новых future
-     * Если maxFutureExecuteTime = 0, до очередь не освобождается по таймауту и поставляющий в
-     * очередь поток будет заблокирован, пока future в очереди не выполнятся
+     * Limited adding of the future to the queue
+     * If the queue has already reached maxPendingCount then block invoking thread till the queue releases,
+     * Then, if maxFutureExecuteTime > 0, by reaching this timeout in milliseconds,
+     * future will be removed from the queue and conditions to add ew features are created
+     * If maxFutureExecuteTime = 0, the queue will be not released by timeout and the providing futures thread
+     * will be blocked, till the futures in the queue will be completed
      */
     public <T> CompletableFuture<T> enqueueBlocking(CompletableFuture<T> future) throws InterruptedException {
         return internalEnqueue(future, true);
     }
 
     /**
-     * Регистрирует future во внутреннем счетчике.
-     * Подписывается на future listener который декрементит счетчик в случае завершения future.
-     * блокируется - если текущее значение внутреннего счетчика достигает или превышает maxPendingCount
-     * разблокируется - если количество pending futures = maxPendingCount * thresholdFactor
-     * разблокирование происходит в методе запущеном в ForkJoinPool после того как future будет завершена
-     * При наличии thresholdListener вызывает его методы в следующих случаях:
-     * ThresholdListener::onLimitReached - перед блокировкой
-     * ThresholdListener::onLimitSubceed - перед разблокировкой
+     * Registers future to the inner counter.
+     * Subscribes on the future listener which decrements counter in case of future completion.
+     * Blocks - if the current counter value reaches or surpasses the maxPendingCount
+     * Unblocks - if pending futures amount = maxPendingCount * thresholdFactor
+     * Unblocking takes place in the method, started in ForkJoinPool after future will be completed
+     * When thresholdListener is set, its methods invoked:
+     * ThresholdListener::onLimitReached - before blocking
+     * ThresholdListener::onLimitSubceed - after unblocking
      */
     protected <T> CompletableFuture<T> internalEnqueue(CompletableFuture<T> future,
                                                        boolean needToBlock) throws InterruptedException {
@@ -203,8 +205,8 @@ public class PendingFutureLimiter {
     }
 
     /**
-     * Освобождение очереди от всех выполняющихся future
-     * WARNING!! Исполняющиеся future не будут прерваны или завершены, они будут просто удалены из очереди!
+     * Releases the queue of all pending futures
+     * WARNING!! Pending futures will not be interrupted or completed, they will be removed from the queue!
      */
     public void releaseAll() throws InterruptedException {
         synchronized (counter) {
@@ -232,14 +234,14 @@ public class PendingFutureLimiter {
 
     public interface ThresholdListener {
         /**
-         * вызывается если текущее значение внутреннего счетчика достигает maxPendingCount
-         * и выполняется в том же потоке в котором был вызван текущий метод.
+         * Called, whet the inner counter's value reaches maxPendingCount
+         * and executed in the same thread withe invoking method.
          */
         void onLimitReached();
 
         /**
-         * вызывается если количество pending futures = maxPendingCount * thresholdFactor
-         * выполняется в отдельном потоке
+         * Called, when the pending futures amount = maxPendingCount * thresholdFactor
+         * executed in the separate thread
          */
         void onLimitSubceed();
     }
