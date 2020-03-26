@@ -84,7 +84,7 @@ class AtomicIdGeneratorTest{
         `when`(clock.millis()).thenReturn(1450894554618L)
 
         val TEST_SERVER_ID = 23L
-        val TEST_COUNTER_VAL = 53Lм
+        val TEST_COUNTER_VAL = 53L
         val counter = AtomicLong(TEST_COUNTER_VAL - 1)
         val bits = BitsConfiguration(timePartBits = 43, counterPartBits = 13, serverPartBits = 7)
 
