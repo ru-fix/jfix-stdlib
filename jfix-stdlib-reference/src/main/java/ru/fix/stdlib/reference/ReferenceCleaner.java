@@ -1,4 +1,4 @@
-package ru.fix.stdlib.concurrency.threads;
+package ru.fix.stdlib.reference;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,12 +13,13 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
- * Use single static {@link ReferenceQueue} instance to track weak reference.
+ * Use single static {@link ReferenceQueue} instance to track weak references.
  * Maintain single {@link Thread} to run clean action.
- * {@link Thread} will be created on demand and destroyed if there no reference left to clean.
+ * {@link Thread} will be created on demand and destroyed if there are no reference left to clean.
+ * {@link Thread} will work in daemon mode {@link Thread#setDaemon(boolean)}
  */
 public class ReferenceCleaner {
-    private static final Logger log = LoggerFactory.getLogger(ReschedulableScheduler.class);
+    private static final Logger log = LoggerFactory.getLogger(ReferenceCleaner.class);
 
     private ReferenceCleaner() {
     }
@@ -30,15 +31,20 @@ public class ReferenceCleaner {
     }
 
 
-    private ReferenceQueue referenceQueue = new ReferenceQueue();
-    private Set<CleanableWeakReference> createdReferences = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private ReferenceQueue<?> referenceQueue = new ReferenceQueue<>();
+    private Set<CleanableWeakReference<?>> createdReferences = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private AtomicReference<Thread> cleanerThread = new AtomicReference<>(null);
 
-    private final class Reference<T, M> extends WeakReference<T> implements CleanableWeakReference {
-        private final M meta;
-        private final BiConsumer<CleanableWeakReference, M> cleaner;
+    private final class Reference<ReferentType, MetaType>
+            extends WeakReference<ReferentType>
+            implements CleanableWeakReference<ReferentType> {
 
-        private Reference(T referent, M meta, BiConsumer<CleanableWeakReference, M> cleaner, ReferenceQueue referenceQueue) {
+        private final MetaType meta;
+        private final BiConsumer<CleanableWeakReference<ReferentType>, MetaType> cleaner;
+
+        private Reference(ReferentType referent, MetaType meta,
+                          BiConsumer<CleanableWeakReference<ReferentType>, MetaType> cleaner,
+                          ReferenceQueue<ReferentType> referenceQueue) {
             super(referent, referenceQueue);
             this.meta = meta;
             this.cleaner = cleaner;

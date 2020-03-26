@@ -1,4 +1,4 @@
-package ru.fix.stdlib.concurrency.threads;
+package ru.fix.stdlib.reference;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

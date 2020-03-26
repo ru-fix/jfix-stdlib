@@ -1,4 +1,4 @@
-package ru.fix.stdlib.concurrency.threads;
+package ru.fix.stdlib.reference;
 
 import java.lang.ref.WeakReference;
 
