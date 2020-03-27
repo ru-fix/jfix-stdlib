@@ -28,8 +28,8 @@ plugins {
     kotlin("jvm") version Vers.kotlin apply false
     signing
     `maven-publish`
-    id(Libs.nexus_publish_plugin) version "0.3.1" apply false
-    id(Libs.nexus_staging_plugin) version "0.21.1"
+    id(Libs.nexus_publish_plugin) version "0.4.0" apply false
+    id(Libs.nexus_staging_plugin) version "0.21.2"
 }
 
 /**
@@ -53,7 +53,6 @@ val signingSecretKeyRingFile by envConfig()
 
 nexusStaging {
     packageGroup = "ru.fix"
-    stagingProfileId = "1f0730098fd259"
     username = "$repositoryUser"
     password = "$repositoryPassword"
     numberOfRetries = 50
@@ -112,6 +111,7 @@ subprojects {
             }
         }
         clientTimeout.set(Duration.of(4, ChronoUnit.MINUTES))
+        connectTimeout.set(Duration.of(4, ChronoUnit.MINUTES))
     }
 
 
