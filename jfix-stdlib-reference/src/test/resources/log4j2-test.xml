@@ -6,7 +6,7 @@
         status="WARN">
     <Appenders>
         <Console name="console" target="SYSTEM_OUT">
-            <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %logger(%F:%L)%n%highlight{%-5level} %msg%n"/>
+            <PatternLayout pattern="%highlight{%-5level} %d{HH:mm:ss.SSS} [%t] %logger(%F:%L)%n%msg%n"/>
         </Console>
     </Appenders>
     <Loggers>
