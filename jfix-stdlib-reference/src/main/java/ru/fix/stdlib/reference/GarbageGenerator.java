@@ -30,7 +30,7 @@ public class GarbageGenerator {
         return this;
     }
 
-    boolean generateGarbageAndWaitForCondition(Supplier<Boolean> condition) throws Exception {
+    public boolean generateGarbageAndWaitForCondition(Supplier<Boolean> condition) throws Exception {
         ArrayList<Object> data = new ArrayList<>();
         long start = System.currentTimeMillis();
 
