@@ -93,9 +93,5 @@ class ThreadPoolGuardTest {
         assertThat(dumpReceiver.get(), containsSubstring("acquire"))
     }
 
-    @Test
-    fun `waitAll should release on timeout if set`() {
-
-    }
 
 }
