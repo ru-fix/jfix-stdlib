@@ -206,22 +206,58 @@ public class PendingFutureLimiter {
     }
 
     /**
-     * Releases the queue of all pending futures
-     * WARNING!! Pending futures will not be interrupted or completed, they will be removed from the queue!
+     * wait all futures to complete up to timeoutMillis milliseconds
+     * If maxFutureExecuteTime is set to 0 it will block invoking thread up to timeoutMillis, till all futures are complete
+     * If maxFutureExecuteTime > 0 then it will block invoking thread up to timeoutMillis, till all futures are complete or reach maxFutureExecuteTime
+     * @param timeoutMillis
+     * maximum time to block invoking thread
+     * @return
+     * true, if all threads where completed or reached maxFutureExecuteTime in timeoutMillis milliseconds
+     * false, otherwise
      */
-    public void releaseAll() throws InterruptedException {
+    public boolean waitAll(long timeoutMillis) throws InterruptedException {
+        long start = System.currentTimeMillis();
         synchronized (counter) {
             while (counter.get() > 0) {
-                counter.wait(waitTimeToCheckSizeQueue);
-                releaseTimeoutedFutures();
+                releaseTimeoutedIfPossible();
+                if (System.currentTimeMillis() - start > timeoutMillis && counter.get() > 0 ) {
+                    Throwable t = (new Throwable("Waiting pending futures to complete failed in " + timeoutMillis + " milliseconds. "
+                     + counter.get() + " futures will be released from the queue."));
+                    log.error(t.getMessage(), t);
+                    releaseTimeoutedFutures();
+                    return false;
+                }
+                if (counter.get() > 0) {
+                    counter.wait(waitTimeToCheckSizeQueue);
+                }
             }
+            return true;
         }
     }
 
-    private void releaseTimeoutedFutures() {
+    /**
+     * Wait all futures to complete
+     * If maxFutureExecuteTime is set to 0 it will block invoking thread till all futures are complete
+     * If maxFutureExecuteTime > 0 then it will block invoking thread till all futures are complete or reach maxFutureExecuteTime
+     * execution time limit
+     */
+    public void waitAll() throws InterruptedException {
+        synchronized (counter) {
+            while (counter.get() > 0) {
+                counter.wait(waitTimeToCheckSizeQueue);
+            }
+            releaseTimeoutedIfPossible();
+        }
+    }
+
+    private void releaseTimeoutedIfPossible() {
         if (maxFutureExecuteTime == 0) {
             return;
         }
+        releaseTimeoutedFutures();
+    }
+
+    private void releaseTimeoutedFutures() {
         String errorMessage = "Timeout exception. Completable future did not complete for at least "
                 + maxFutureExecuteTime + " milliseconds. Pending count: " + getPendingCount();
 
