@@ -196,7 +196,7 @@ public class PendingFutureLimiter {
         synchronized (counter) {
             while (counter.get() >= maxPendingCount && maxFutureExecuteTime > 0) {
                 counter.wait(waitTimeToCheckSizeQueue);
-                releaseTimeoutedFutures();
+                releaseTimeoutedIfPossible();
             }
         }
     }
@@ -213,7 +213,8 @@ public class PendingFutureLimiter {
      * maximum time to block invoking thread
      * @return
      * true, if all threads where completed or reached maxFutureExecuteTime in timeoutMillis milliseconds
-     * false, otherwise
+     * false, if some future(s) remained uncompleted and didn't reach maxFutureExecuteTime in timeoutMillis milliseconds.
+     * In this case, uncompleted futures will remain in the queue.
      */
     public boolean waitAll(long timeoutMillis) throws InterruptedException {
         long start = System.currentTimeMillis();
@@ -222,9 +223,8 @@ public class PendingFutureLimiter {
                 releaseTimeoutedIfPossible();
                 if (System.currentTimeMillis() - start > timeoutMillis && counter.get() > 0 ) {
                     Throwable t = (new Throwable("Waiting pending futures to complete failed in " + timeoutMillis + " milliseconds. "
-                     + counter.get() + " futures will be released from the queue."));
+                     + counter.get() + " futures remain in the queue."));
                     log.error(t.getMessage(), t);
-                    releaseTimeoutedFutures();
                     return false;
                 }
                 if (counter.get() > 0) {
@@ -254,10 +254,7 @@ public class PendingFutureLimiter {
         if (maxFutureExecuteTime == 0) {
             return;
         }
-        releaseTimeoutedFutures();
-    }
 
-    private void releaseTimeoutedFutures() {
         String errorMessage = "Timeout exception. Completable future did not complete for at least "
                 + maxFutureExecuteTime + " milliseconds. Pending count: " + getPendingCount();
 
