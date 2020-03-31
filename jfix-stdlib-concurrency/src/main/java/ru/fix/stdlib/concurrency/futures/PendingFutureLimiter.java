@@ -116,9 +116,9 @@ public class PendingFutureLimiter {
      */
     public PendingFutureLimiter changeThresholdFactor(float thresholdFactor) {
 
-        int threashold = calculateThreshold(maxPendingCount, thresholdFactor);
+        int threshold = calculateThreshold(maxPendingCount, thresholdFactor);
 
-        if (threashold <= 0 || threashold >= maxPendingCount) {
+        if (threshold <= 0 || threshold >= maxPendingCount) {
             throw new IllegalArgumentException("Invalid thresholdFactor");
         }
 
@@ -244,9 +244,12 @@ public class PendingFutureLimiter {
     public void waitAll() throws InterruptedException {
         synchronized (counter) {
             while (counter.get() > 0) {
-                counter.wait(waitTimeToCheckSizeQueue);
+                releaseTimeoutedIfPossible();
+                if (counter.get() > 0) {
+                    counter.wait(waitTimeToCheckSizeQueue);
+                }
             }
-            releaseTimeoutedIfPossible();
+
         }
     }
 

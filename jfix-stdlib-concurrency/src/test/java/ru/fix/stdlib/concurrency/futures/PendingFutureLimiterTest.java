@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Field;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -52,46 +53,25 @@ public class PendingFutureLimiterTest {
     @Test
     public void block_on_task_when_pending_count_bigger_than_max_border() throws Exception {
 
-        /**
-         * Create limiter with 3 pending tasks max
-         */
-        PendingFutureLimiter limiter = new PendingFutureLimiter(3, TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES));
+        PendingFutureLimiter limiter = new LimiterBuilder()
+                .enqueueTasks(3)
+                .build();
 
-        /**
-         * blockingEnqueue 3 tasks without blocking
-         */
-        for (int i = 0; i < 3; i++) {
-            limiter.enqueueBlocking(createTask());
-        }
-
-        /**
-         * Currently there are 3 pending operations
-         */
+        //Currently there are 3 pending operations
         assertEquals(3, limiter.getPendingCount());
 
-        /**
-         * Global counter does not changed - background task have not completed yet
-         */
+        // Global counter does not changed - background task have not completed yet
         assertEquals(0, globalCounter.get());
 
-        Executors.newSingleThreadScheduledExecutor().schedule(() -> {
-            startAllTasks();
-        }, 1, TimeUnit.SECONDS);
+        Executors.newSingleThreadScheduledExecutor().schedule(this::startAllTasks, 1, TimeUnit.SECONDS);
 
-        /**
-         * Enqueue 4-ht task, Should block until one of previous task will complete
-         */
+        // Enqueue 4-th task, Should block until one of previous task will complete
         limiter.enqueueBlocking(createTask());
 
-        /**
-         * At least one task should be completed
-         */
+        // At least one task should be completed
         assertTrue(globalCounter.get() >= 1);
 
-
-        /**
-         * All tasks should complete
-         */
+        // All tasks should complete
         await().atMost(1, TimeUnit.MINUTES)
                 .until(() -> globalCounter.get() == 4 && limiter.getPendingCount() == 0);
 
@@ -99,16 +79,189 @@ public class PendingFutureLimiterTest {
         assertEquals(0, limiter.getPendingCount());
     }
 
-    public class SessionStub {
-        private volatile boolean readable = true;
+    @Test
+    public void enqueue_should_pass_after_timout_when_it_is_more_than_zero() throws Exception {
 
-        public boolean isReadable() {
-            return this.readable;
+        long executionTimeLimit = TimeUnit.SECONDS.toMillis(20);
+
+        PendingFutureLimiter limiter = new LimiterBuilder()
+                .executionTimeLimit(executionTimeLimit)
+                .frequencyToCheckQueueSize(TimeUnit.SECONDS.toMillis(5))
+                .enqueueTasks(3)
+                .build();
+
+
+        //Currently there are 3 pending operations
+        assertEquals(3, limiter.getPendingCount());
+
+        Executors.newSingleThreadScheduledExecutor().schedule(() -> {
+            try {
+                limiter.enqueueBlocking(createTask());
+            } catch (InterruptedException ignore) {}
+        }, executionTimeLimit, TimeUnit.MILLISECONDS);
+
+        await().atMost(executionTimeLimit * 2, TimeUnit.MILLISECONDS)
+                .until(() -> limiter.getPendingCount() == 1);
+    }
+
+    @Test
+    public void waitAll_should_wait_till_futures_completed() throws Exception {
+        long timeToCheckWait =  TimeUnit.SECONDS.toMillis(20);
+
+        PendingFutureLimiter limiter = new LimiterBuilder()
+                .executionTimeLimit(0)
+                .frequencyToCheckQueueSize(TimeUnit.SECONDS.toMillis(5))
+                .enqueueTasks(3)
+                .build();
+
+        //Currently there are 3 pending operations
+        assertEquals(3, limiter.getPendingCount());
+
+        long start = System.currentTimeMillis();
+
+        //We'll start all tasks after some time...
+        Executors.newSingleThreadScheduledExecutor().schedule(() -> {
+            startAllTasks();
+        }, timeToCheckWait, TimeUnit.MILLISECONDS);
+        limiter.waitAll();
+
+        //And check if we've been waiting for this time and all tasks to complete
+        assertTrue(System.currentTimeMillis() - start >= timeToCheckWait);
+        assertEquals(globalCounter.get(), 3);
+        assertEquals(limiter.getPendingCount(), 0);
+    }
+
+    @Test
+    public void waitAll_should_wait_till_futures_are_timeouted() throws Exception {
+        long executionTimeLimit = TimeUnit.SECONDS.toMillis(20);
+
+        PendingFutureLimiter limiter = new LimiterBuilder()
+                .executionTimeLimit(executionTimeLimit)
+                .frequencyToCheckQueueSize(TimeUnit.SECONDS.toMillis(5))
+                .enqueueTasks(3)
+                .build();
+
+        //Currently there are 3 pending operations
+        assertEquals(3, limiter.getPendingCount());
+
+        long start = System.currentTimeMillis();
+        // We'll try to wait without starting any task...
+        limiter.waitAll();
+        // So we expect no task will be executed and the queue will be purged after timeout
+        assertTrue(System.currentTimeMillis() - start >= executionTimeLimit);
+        assertEquals(globalCounter.get(), 0);
+        assertEquals(limiter.getPendingCount(), 0);
+    }
+
+    @Test
+    public void waitAll_should_return_false_when_couldnt_release_futures_and_true_when_everything_is_completed() throws Exception {
+
+        long timeToWait = TimeUnit.SECONDS.toMillis(20);
+        // Create limiter with no timeout
+        PendingFutureLimiter limiter = new LimiterBuilder()
+                .executionTimeLimit(0)
+                .frequencyToCheckQueueSize(TimeUnit.SECONDS.toMillis(5))
+                .enqueueTasks(3)
+                .build();
+
+        //Currently there are 3 pending operations
+        assertEquals(3, limiter.getPendingCount());
+
+        long start = System.currentTimeMillis();
+
+        // We'll try to wait without starting any task...
+        assertFalse(limiter.waitAll(timeToWait));
+
+        // So we expect no task will be executed and the queue will be still full after waiting time
+        assertTrue(System.currentTimeMillis() - start >= timeToWait);
+        assertEquals(globalCounter.get(), 0);
+        assertEquals(limiter.getPendingCount(), 3);
+
+        startAllTasks();
+        // But after all tasks started - waitAll should return true
+        assertTrue(limiter.waitAll(timeToWait));
+        // And after that - all tasks are completed and the queue is free
+        assertEquals(globalCounter.get(), 3);
+        assertEquals(limiter.getPendingCount(), 0);
+    }
+
+    @Test
+    public void waitAll_conditions_with_executionTimeLimited_limiter() throws Exception {
+        long timeToWait = TimeUnit.SECONDS.toMillis(20);
+
+        // Create limiter with timeout
+        PendingFutureLimiter limiter = new LimiterBuilder()
+                .executionTimeLimit(timeToWait * 2)
+                .frequencyToCheckQueueSize(TimeUnit.SECONDS.toMillis(5))
+                .enqueueTasks(3)
+                .build();
+
+        //Currently there are 3 pending operations
+        assertEquals(3, limiter.getPendingCount());
+
+        long start = System.currentTimeMillis();
+
+        // We'll try to wait without starting any task...
+        assertFalse(limiter.waitAll(timeToWait));
+
+        // So we expect no task will be executed and the queue will be still full after waiting time
+        assertTrue(System.currentTimeMillis() - start >= timeToWait);
+        assertEquals(globalCounter.get(), 0);
+        assertEquals(limiter.getPendingCount(), 3);
+
+        // We won't start any task, just wait once more
+        assertTrue(limiter.waitAll(timeToWait * 2));
+        // And after that - no task is completed, but the queue is purged by timeout
+        assertEquals(globalCounter.get(), 0);
+        assertEquals(limiter.getPendingCount(), 0);
+    }
+
+    private class LimiterBuilder {
+        private long executionTimeLimit = TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES);
+        private long frequencyToCheckQueueSize = 0;
+        private int tasksToEnqueue = 0;
+        private int maxPendingCount = 3;
+
+        LimiterBuilder() {}
+
+        PendingFutureLimiter build() throws Exception {
+            PendingFutureLimiter res = new PendingFutureLimiter(maxPendingCount, executionTimeLimit);
+
+            if (frequencyToCheckQueueSize != 0) {
+                Field waitTimeToCheckSizeQueue = PendingFutureLimiter.class.getDeclaredField("waitTimeToCheckSizeQueue");
+                waitTimeToCheckSizeQueue.setAccessible(true);
+                waitTimeToCheckSizeQueue.set(res, frequencyToCheckQueueSize);
+            }
+
+            if (tasksToEnqueue != 0) {
+                for (int i = 0; i < tasksToEnqueue; i++) {
+                    res.enqueueBlocking(createTask());
+                }
+            }
+
+            return res;
         }
 
-        public void setReadable(boolean readable) {
-            this.readable = readable;
+        LimiterBuilder executionTimeLimit(long executionTimeLimit) {
+            this.executionTimeLimit = executionTimeLimit;
+            return this;
         }
+
+        LimiterBuilder frequencyToCheckQueueSize(long frequencyToCheckQueueSize) {
+            this.frequencyToCheckQueueSize = frequencyToCheckQueueSize;
+            return this;
+        }
+
+        LimiterBuilder enqueueTasks(int tasksToEnqueue) {
+            this.tasksToEnqueue = tasksToEnqueue;
+            return this;
+        }
+
+        LimiterBuilder maxPendingCount(int maxPendingCount) {
+            this.maxPendingCount = maxPendingCount;
+            return this;
+        }
+
     }
 
     @Test
@@ -144,19 +297,10 @@ public class PendingFutureLimiterTest {
                 .until(sessionStub::isReadable);
     }
 
-    private void startAllTasks() {
-        startTasksFlag.set(true);
-        synchronized (startTasksFlag) {
-            startTasksFlag.notifyAll();
-        }
-    }
-
     @Test
     public void limiter_pending_count_reset_on_future_with_handler() throws Exception {
 
-        /**
-         * Create limiter with 3 pending tasks max
-         */
+        // Create limiter with 3 pending tasks max
         PendingFutureLimiter limiter = new PendingFutureLimiter(3, TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES));
 
         CompletableFuture<Void> future = createTask();
@@ -169,14 +313,31 @@ public class PendingFutureLimiterTest {
 
         limiter.enqueueBlocking(future);
 
-        /**
-         * All tasks should complete
-         */
+        // All tasks should complete
         await().atMost(1, TimeUnit.MINUTES)
                 .until(() -> globalCounter.get() == 1 && limiter.getPendingCount() == 0);
 
         assertEquals(1, globalCounter.get());
         assertEquals(0, limiter.getPendingCount());
+    }
+
+    public static class SessionStub {
+        private volatile boolean readable = true;
+
+        public boolean isReadable() {
+            return this.readable;
+        }
+
+        public void setReadable(boolean readable) {
+            this.readable = readable;
+        }
+    }
+
+    private void startAllTasks() {
+        startTasksFlag.set(true);
+        synchronized (startTasksFlag) {
+            startTasksFlag.notifyAll();
+        }
     }
 
 }
