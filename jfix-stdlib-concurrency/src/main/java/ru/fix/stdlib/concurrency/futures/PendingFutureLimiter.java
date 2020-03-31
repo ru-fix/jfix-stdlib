@@ -31,10 +31,12 @@ public class PendingFutureLimiter {
 
     /**
      * @param maxPendingCount         max amount of {@link CompletableFuture} started in parallel
-     * @param maxFutureExecuteTimeout maximum time (milliseconds) on {@link CompletableFuture} execution,
-     *                                when this timeout is reached, {@link CompletableFuture} queue will be cleaned,
-     *                                and on the {@link CompletableFuture} itself
+     * @param maxFutureExecuteTimeout maximum time (milliseconds) on {@link CompletableFuture} execution.
+     *                                If it is more than 0 then when this timeout is reached, {@link CompletableFuture}
+     *                                queue will be cleaned, and on the {@link CompletableFuture} itself
      *                                {@link CompletableFuture#completeExceptionally(Throwable)} will be invoked
+     *                                If it set to 0, futures on the queue will be always await completion to be removed
+     *                                from the queue
      */
     public PendingFutureLimiter(int maxPendingCount, long maxFutureExecuteTimeout) {
         this.maxPendingCount = maxPendingCount;
@@ -43,10 +45,12 @@ public class PendingFutureLimiter {
 
     /**
      * @param maxPendingCount         max amount of {@link CompletableFuture} started in parallel
-     * @param maxFutureExecuteTimeout maximum time (milliseconds) on {@link CompletableFuture} execution,
-     *                                when this timeout is reached, {@link CompletableFuture} queue will be cleaned,
-     *                                and on the {@link CompletableFuture} itself
+     * @param maxFutureExecuteTimeout maximum time (milliseconds) on {@link CompletableFuture} execution.
+     *                                If it is more than 0 then when this timeout is reached, {@link CompletableFuture}
+     *                                queue will be cleaned, and on the {@link CompletableFuture} itself
      *                                {@link CompletableFuture#completeExceptionally(Throwable)} will be invoked
+     *                                If it set to 0, futures on the queue will be always await completion to be removed
+     *                                from the queue
      */
     public PendingFutureLimiter(DynamicProperty<Integer> maxPendingCount, DynamicProperty<Long> maxFutureExecuteTimeout) {
         this.maxPendingCount = maxPendingCount.get();
