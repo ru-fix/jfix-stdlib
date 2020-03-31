@@ -90,7 +90,6 @@ public class PendingFutureLimiterTest {
                 .enqueueTasks(3)
                 .build();
 
-
         //Currently there are 3 pending operations
         assertEquals(3, limiter.getPendingCount());
 
@@ -186,7 +185,7 @@ public class PendingFutureLimiterTest {
     }
 
     @Test
-    public void waitAll_conditions_with_executionTimeLimited_limiter() throws Exception {
+    public void waitAll_behaviour_with_executionTime_limited_limiter() throws Exception {
         long timeToWait = TimeUnit.SECONDS.toMillis(20);
 
         // Create limiter with timeout
@@ -214,54 +213,6 @@ public class PendingFutureLimiterTest {
         // And after that - no task is completed, but the queue is purged by timeout
         assertEquals(globalCounter.get(), 0);
         assertEquals(limiter.getPendingCount(), 0);
-    }
-
-    private class LimiterBuilder {
-        private long executionTimeLimit = TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES);
-        private long frequencyToCheckQueueSize = 0;
-        private int tasksToEnqueue = 0;
-        private int maxPendingCount = 3;
-
-        LimiterBuilder() {}
-
-        PendingFutureLimiter build() throws Exception {
-            PendingFutureLimiter res = new PendingFutureLimiter(maxPendingCount, executionTimeLimit);
-
-            if (frequencyToCheckQueueSize != 0) {
-                Field waitTimeToCheckSizeQueue = PendingFutureLimiter.class.getDeclaredField("waitTimeToCheckSizeQueue");
-                waitTimeToCheckSizeQueue.setAccessible(true);
-                waitTimeToCheckSizeQueue.set(res, frequencyToCheckQueueSize);
-            }
-
-            if (tasksToEnqueue != 0) {
-                for (int i = 0; i < tasksToEnqueue; i++) {
-                    res.enqueueBlocking(createTask());
-                }
-            }
-
-            return res;
-        }
-
-        LimiterBuilder executionTimeLimit(long executionTimeLimit) {
-            this.executionTimeLimit = executionTimeLimit;
-            return this;
-        }
-
-        LimiterBuilder frequencyToCheckQueueSize(long frequencyToCheckQueueSize) {
-            this.frequencyToCheckQueueSize = frequencyToCheckQueueSize;
-            return this;
-        }
-
-        LimiterBuilder enqueueTasks(int tasksToEnqueue) {
-            this.tasksToEnqueue = tasksToEnqueue;
-            return this;
-        }
-
-        LimiterBuilder maxPendingCount(int maxPendingCount) {
-            this.maxPendingCount = maxPendingCount;
-            return this;
-        }
-
     }
 
     @Test
@@ -319,6 +270,54 @@ public class PendingFutureLimiterTest {
 
         assertEquals(1, globalCounter.get());
         assertEquals(0, limiter.getPendingCount());
+    }
+
+    private class LimiterBuilder {
+        private long executionTimeLimit = TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES);
+        private long frequencyToCheckQueueSize = 0;
+        private int tasksToEnqueue = 0;
+        private int maxPendingCount = 3;
+
+        LimiterBuilder() {}
+
+        PendingFutureLimiter build() throws Exception {
+            PendingFutureLimiter res = new PendingFutureLimiter(maxPendingCount, executionTimeLimit);
+
+            if (frequencyToCheckQueueSize != 0) {
+                Field waitTimeToCheckSizeQueue = PendingFutureLimiter.class.getDeclaredField("waitTimeToCheckSizeQueue");
+                waitTimeToCheckSizeQueue.setAccessible(true);
+                waitTimeToCheckSizeQueue.set(res, frequencyToCheckQueueSize);
+            }
+
+            if (tasksToEnqueue != 0) {
+                for (int i = 0; i < tasksToEnqueue; i++) {
+                    res.enqueueBlocking(createTask());
+                }
+            }
+
+            return res;
+        }
+
+        LimiterBuilder executionTimeLimit(long executionTimeLimit) {
+            this.executionTimeLimit = executionTimeLimit;
+            return this;
+        }
+
+        LimiterBuilder frequencyToCheckQueueSize(long frequencyToCheckQueueSize) {
+            this.frequencyToCheckQueueSize = frequencyToCheckQueueSize;
+            return this;
+        }
+
+        LimiterBuilder enqueueTasks(int tasksToEnqueue) {
+            this.tasksToEnqueue = tasksToEnqueue;
+            return this;
+        }
+
+        LimiterBuilder maxPendingCount(int maxPendingCount) {
+            this.maxPendingCount = maxPendingCount;
+            return this;
+        }
+
     }
 
     public static class SessionStub {
