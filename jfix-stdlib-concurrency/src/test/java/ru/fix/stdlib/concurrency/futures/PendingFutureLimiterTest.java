@@ -93,12 +93,14 @@ public class PendingFutureLimiterTest {
         //Currently there are 3 pending operations
         assertEquals(3, limiter.getPendingCount());
 
+        // We'll try to enqueue after futures timeout is exceeded
         Executors.newSingleThreadScheduledExecutor().schedule(() -> {
             try {
                 limiter.enqueueBlocking(createTask());
             } catch (InterruptedException ignore) {}
-        }, executionTimeLimit, TimeUnit.MILLISECONDS);
+        }, executionTimeLimit + 10, TimeUnit.MILLISECONDS);
 
+        // And having blockinqEnqueue being called after executionTimeLimit - the queue will be cleaned and the only future will be in it
         await().atMost(executionTimeLimit * 2, TimeUnit.MILLISECONDS)
                 .until(() -> limiter.getPendingCount() == 1);
     }
