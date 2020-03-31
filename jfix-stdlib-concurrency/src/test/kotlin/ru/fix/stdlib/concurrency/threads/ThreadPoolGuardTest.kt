@@ -25,11 +25,11 @@ class ThreadPoolGuardTest {
 
         val pool = ForkJoinPool(4)
 
-        val guard = ForkJoinThreadPoolGuard(
+        ForkJoinThreadPoolGuard(
                 NoopProfiler(),
                 Schedule.withRate(DynamicProperty.of(100L)),
                 pool,
-                DynamicProperty.of(400)) { queueSize, dump ->
+                DynamicProperty.of(400)) { _, _ ->
             alarmFlag.set(true)
         }
 
@@ -63,11 +63,11 @@ class ThreadPoolGuardTest {
 
         val pool = ForkJoinPool(4)
 
-        val guard = ForkJoinThreadPoolGuard(
+        ForkJoinThreadPoolGuard(
                 NoopProfiler(),
                 Schedule.withRate(DynamicProperty.of(100L)),
                 pool,
-                DynamicProperty.of(400)) { queueSize, dump ->
+                DynamicProperty.of(400)) { _, dump ->
 
             if (alarmFlag.compareAndSet(false, true)) {
                 dumpReceiver.set(dump)
@@ -92,4 +92,6 @@ class ThreadPoolGuardTest {
         assertThat(dumpReceiver.get(), containsSubstring(this::class.java.simpleName))
         assertThat(dumpReceiver.get(), containsSubstring("acquire"))
     }
+
+
 }
