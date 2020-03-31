@@ -25,7 +25,7 @@ public class PendingFutureLimiter {
     private volatile int maxPendingCount;
     private volatile float thresholdFactor = 0.3f;
     private volatile long maxFutureExecuteTime;
-    private volatile long waitTimeToCheckSizeQueue = TimeUnit.MINUTES.toMillis(1);
+    private volatile long pendingQueueSizeChangeCheckInteval = TimeUnit.MINUTES.toMillis(1);
 
     private ThresholdListener thresholdListener;
 
@@ -35,7 +35,6 @@ public class PendingFutureLimiter {
      *                                when this timeout is reached, {@link CompletableFuture} queue will be cleaned,
      *                                and on the {@link CompletableFuture} itself
      *                                {@link CompletableFuture#completeExceptionally(Throwable)} will be invoked
-     *
      */
     public PendingFutureLimiter(int maxPendingCount, long maxFutureExecuteTimeout) {
         this.maxPendingCount = maxPendingCount;
@@ -69,8 +68,12 @@ public class PendingFutureLimiter {
         return maxPendingCount;
     }
 
+    public void setPendingQueueSizeChangeCheckInteval(long pendingQueueSizeChangeCheckInteval) {
+        this.pendingQueueSizeChangeCheckInteval = pendingQueueSizeChangeCheckInteval;
+    }
+
     /**
-     * Изменяет максимальное число pending futures
+     * Change pending futures maximum amount
      */
     public PendingFutureLimiter setMaxPendingCount(int maxPendingCount) {
 
@@ -195,7 +198,7 @@ public class PendingFutureLimiter {
     private void awaitOpportunityToEnqueueAndPurge() throws InterruptedException {
         synchronized (counter) {
             while (counter.get() >= maxPendingCount && maxFutureExecuteTime > 0) {
-                counter.wait(waitTimeToCheckSizeQueue);
+                counter.wait(pendingQueueSizeChangeCheckInteval);
                 releaseTimeoutedIfPossible();
             }
         }
@@ -228,7 +231,11 @@ public class PendingFutureLimiter {
                     return false;
                 }
                 if (counter.get() > 0) {
-                    counter.wait(waitTimeToCheckSizeQueue);
+                    counter.wait(pendingQueueSizeChangeCheckInteval);
+                    long timeToWait = Math.min(pendingQueueSizeChangeCheckInteval, timeoutMillis - (System.currentTimeMillis() - start));
+                    if (timeToWait > 0) {
+                        counter.wait(timeToWait);
+                    }
                 }
             }
             return true;
@@ -246,10 +253,9 @@ public class PendingFutureLimiter {
             while (counter.get() > 0) {
                 releaseTimeoutedIfPossible();
                 if (counter.get() > 0) {
-                    counter.wait(waitTimeToCheckSizeQueue);
+                    counter.wait(pendingQueueSizeChangeCheckInteval);
                 }
             }
-
         }
     }
 

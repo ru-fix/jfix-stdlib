@@ -5,12 +5,9 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.Field;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.awaitility.Awaitility.await;
@@ -25,35 +22,25 @@ public class PendingFutureLimiterTest {
     private static final Logger log = LoggerFactory.getLogger(PendingFutureLimiterTest.class);
     private static final long FUTURE_LIMITER_TIMEOUT_MINUTES = 15;
 
-    private final Executor executor = Executors.newFixedThreadPool(20);
     private final AtomicInteger globalCounter = new AtomicInteger();
-    private final AtomicBoolean startTasksFlag = new AtomicBoolean();
+
+    private CompletableFuture latch = new CompletableFuture();
 
     private CompletableFuture<Void> createTask() {
-        return CompletableFuture.runAsync(() -> {
-            try {
-                synchronized (startTasksFlag) {
-                    while (!startTasksFlag.get()) {
-                        startTasksFlag.wait();
-                    }
-                }
-                globalCounter.incrementAndGet();
-            } catch (Exception exc) {
-                log.error(exc.getMessage(), exc);
-            }
-        }, executor);
+        return latch.thenApplyAsync(o -> globalCounter.incrementAndGet());
     }
 
     @BeforeEach
     public void clean() {
+        latch = new CompletableFuture();
         globalCounter.set(0);
-        startTasksFlag.set(false);
     }
 
     @Test
     public void block_on_task_when_pending_count_bigger_than_max_border() throws Exception {
 
         PendingFutureLimiter limiter = new LimiterBuilder()
+                .maxPendingCount(3)
                 .enqueueTasks(3)
                 .build();
 
@@ -63,7 +50,7 @@ public class PendingFutureLimiterTest {
         // Global counter does not changed - background task have not completed yet
         assertEquals(0, globalCounter.get());
 
-        Executors.newSingleThreadScheduledExecutor().schedule(this::startAllTasks, 1, TimeUnit.SECONDS);
+        Executors.newSingleThreadScheduledExecutor().schedule(this::unleashLatchAndCompleteAllTask, 1, TimeUnit.SECONDS);
 
         // Enqueue 4-th task, Should block until one of previous task will complete
         limiter.enqueueBlocking(createTask());
@@ -86,7 +73,8 @@ public class PendingFutureLimiterTest {
 
         PendingFutureLimiter limiter = new LimiterBuilder()
                 .executionTimeLimit(executionTimeLimit)
-                .frequencyToCheckQueueSize(TimeUnit.SECONDS.toMillis(5))
+                .setPendingQueueSizeChangeCheckInteval(TimeUnit.SECONDS.toMillis(5))
+                .maxPendingCount(3)
                 .enqueueTasks(3)
                 .build();
 
@@ -111,7 +99,8 @@ public class PendingFutureLimiterTest {
 
         PendingFutureLimiter limiter = new LimiterBuilder()
                 .executionTimeLimit(0)
-                .frequencyToCheckQueueSize(TimeUnit.SECONDS.toMillis(5))
+                .setPendingQueueSizeChangeCheckInteval(TimeUnit.SECONDS.toMillis(5))
+                .maxPendingCount(3)
                 .enqueueTasks(3)
                 .build();
 
@@ -121,9 +110,8 @@ public class PendingFutureLimiterTest {
         long start = System.currentTimeMillis();
 
         //We'll start all tasks after some time...
-        Executors.newSingleThreadScheduledExecutor().schedule(() -> {
-            startAllTasks();
-        }, timeToCheckWait, TimeUnit.MILLISECONDS);
+        Executors.newSingleThreadScheduledExecutor().schedule(this::unleashLatchAndCompleteAllTask,
+                timeToCheckWait, TimeUnit.MILLISECONDS);
         limiter.waitAll();
 
         //And check if we've been waiting for this time and all tasks to complete
@@ -138,7 +126,8 @@ public class PendingFutureLimiterTest {
 
         PendingFutureLimiter limiter = new LimiterBuilder()
                 .executionTimeLimit(executionTimeLimit)
-                .frequencyToCheckQueueSize(TimeUnit.SECONDS.toMillis(5))
+                .setPendingQueueSizeChangeCheckInteval(TimeUnit.SECONDS.toMillis(5))
+                .maxPendingCount(3)
                 .enqueueTasks(3)
                 .build();
 
@@ -161,7 +150,8 @@ public class PendingFutureLimiterTest {
         // Create limiter with no timeout
         PendingFutureLimiter limiter = new LimiterBuilder()
                 .executionTimeLimit(0)
-                .frequencyToCheckQueueSize(TimeUnit.SECONDS.toMillis(5))
+                .setPendingQueueSizeChangeCheckInteval(TimeUnit.SECONDS.toMillis(5))
+                .maxPendingCount(3)
                 .enqueueTasks(3)
                 .build();
 
@@ -178,7 +168,7 @@ public class PendingFutureLimiterTest {
         assertEquals(globalCounter.get(), 0);
         assertEquals(limiter.getPendingCount(), 3);
 
-        startAllTasks();
+        unleashLatchAndCompleteAllTask();
         // But after all tasks started - waitAll should return true
         assertTrue(limiter.waitAll(timeToWait));
         // And after that - all tasks are completed and the queue is free
@@ -193,7 +183,8 @@ public class PendingFutureLimiterTest {
         // Create limiter with timeout
         PendingFutureLimiter limiter = new LimiterBuilder()
                 .executionTimeLimit(timeToWait * 2)
-                .frequencyToCheckQueueSize(TimeUnit.SECONDS.toMillis(5))
+                .setPendingQueueSizeChangeCheckInteval(TimeUnit.SECONDS.toMillis(5))
+                .maxPendingCount(3)
                 .enqueueTasks(3)
                 .build();
 
@@ -242,7 +233,7 @@ public class PendingFutureLimiterTest {
         limiter.enqueueUnlimited(createTask());
         assertFalse(sessionStub.isReadable());
 
-        startAllTasks();
+        unleashLatchAndCompleteAllTask();
         with().pollDelay(10L, TimeUnit.MILLISECONDS)
                 .until(() -> limiter.getPendingCount() == 0);
         with().pollDelay(0L, TimeUnit.MILLISECONDS)
@@ -262,7 +253,7 @@ public class PendingFutureLimiterTest {
             return any;
         });
 
-        startAllTasks();
+        unleashLatchAndCompleteAllTask();
 
         limiter.enqueueBlocking(future);
 
@@ -276,7 +267,7 @@ public class PendingFutureLimiterTest {
 
     private class LimiterBuilder {
         private long executionTimeLimit = TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES);
-        private long frequencyToCheckQueueSize = 0;
+        private long pendingQueueSizeChangeCheckInteval = 0;
         private int tasksToEnqueue = 0;
         private int maxPendingCount = 3;
 
@@ -285,10 +276,8 @@ public class PendingFutureLimiterTest {
         PendingFutureLimiter build() throws Exception {
             PendingFutureLimiter res = new PendingFutureLimiter(maxPendingCount, executionTimeLimit);
 
-            if (frequencyToCheckQueueSize != 0) {
-                Field waitTimeToCheckSizeQueue = PendingFutureLimiter.class.getDeclaredField("waitTimeToCheckSizeQueue");
-                waitTimeToCheckSizeQueue.setAccessible(true);
-                waitTimeToCheckSizeQueue.set(res, frequencyToCheckQueueSize);
+            if (pendingQueueSizeChangeCheckInteval != 0) {
+                res.setPendingQueueSizeChangeCheckInteval(pendingQueueSizeChangeCheckInteval);
             }
 
             if (tasksToEnqueue != 0) {
@@ -305,8 +294,8 @@ public class PendingFutureLimiterTest {
             return this;
         }
 
-        LimiterBuilder frequencyToCheckQueueSize(long frequencyToCheckQueueSize) {
-            this.frequencyToCheckQueueSize = frequencyToCheckQueueSize;
+        LimiterBuilder setPendingQueueSizeChangeCheckInteval(long pendingQueueSizeChangeCheckInteval) {
+            this.pendingQueueSizeChangeCheckInteval = pendingQueueSizeChangeCheckInteval;
             return this;
         }
 
@@ -334,11 +323,8 @@ public class PendingFutureLimiterTest {
         }
     }
 
-    private void startAllTasks() {
-        startTasksFlag.set(true);
-        synchronized (startTasksFlag) {
-            startTasksFlag.notifyAll();
-        }
+    private void unleashLatchAndCompleteAllTask() {
+        latch.complete(null);
     }
 
 }
