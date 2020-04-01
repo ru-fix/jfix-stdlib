@@ -26,12 +26,9 @@ public class ProfiledPendingFutureLimiter extends PendingFutureLimiter implement
                                         DynamicProperty<Long> maxFutureExecuteTimeout,
                                         Profiler namedProfiler,
                                         Map<String, String> tags) {
-        super(maxPendingCount.get(), maxFutureExecuteTimeout.get());
+        super(maxPendingCount, maxFutureExecuteTimeout);
         this.profiler = namedProfiler;
         this.tags = tags;
-
-        maxPendingCount.addListener((oldValue, newValue) -> setMaxPendingCount(newValue));
-        maxFutureExecuteTimeout.addListener((oldValue, newValue) -> setMaxFutureExecuteTime(newValue));
 
         attachIndicators();
     }

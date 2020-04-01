@@ -3,6 +3,7 @@ package ru.fix.stdlib.concurrency.threads;
 import ru.fix.aggregating.profiler.ProfiledCall;
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
+import ru.fix.dynamic.property.api.PropertySubscription;
 
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
@@ -15,6 +16,7 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
     final Profiler profiler;
 
     final ThreadLocal<ProfiledCall> runExecution = new ThreadLocal<>();
+    private final PropertySubscription<Integer> maxPoolSizeSubscription;
 
     /**
      * Invoked by ctor
@@ -50,7 +52,9 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
         this.setKeepAliveTime(THREAD_IDLE_TIMEOUT_BEFORE_TERMINATION_SEC, TimeUnit.SECONDS);
         this.allowCoreThreadTimeOut(true);
 
-        maxPoolSize.addAndCallListener((oldVal, newVal) -> this.setMaxPoolSize(newVal));
+        this.maxPoolSizeSubscription = maxPoolSize
+                .createSubscription()
+                .setAndCallListener((oldVal, newVal) -> this.setMaxPoolSize(newVal));
 
         profiler.attachIndicator(queueIndicatorName, () -> (long) this.getQueue().size());
         profiler.attachIndicator(activeThreadsIndicatorName, () -> (long) this.getActiveCount());
@@ -78,6 +82,8 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
         profiler.detachIndicator(queueIndicatorName);
         profiler.detachIndicator(activeThreadsIndicatorName);
         profiler.detachIndicator(poolSizeIndicatorName);
+        maxPoolSizeSubscription.close();
+        super.terminated();
     }
 
 

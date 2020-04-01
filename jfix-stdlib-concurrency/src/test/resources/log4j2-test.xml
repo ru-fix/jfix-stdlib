@@ -11,6 +11,8 @@
     </Appenders>
     <Loggers>
         <Logger name="ru.fix" level="info"/>
+        <Logger name="ru.fix.stdlib.concurrency.threads.ReschedulableScheduler" level="trace"/>
+
         <Root level="info">
             <AppenderRef ref="console"/>
         </Root>

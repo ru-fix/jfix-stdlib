@@ -3,6 +3,7 @@ package ru.fix.stdlib.concurrency.threads;
 import ru.fix.aggregating.profiler.ProfiledCall;
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
+import ru.fix.dynamic.property.api.PropertySubscription;
 
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
@@ -17,6 +18,7 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
     final Profiler profiler;
 
     final ThreadLocal<ProfiledCall> runExecution = new ThreadLocal<>();
+    private final PropertySubscription<Integer> maxPoolSizeSubscription;
 
     private abstract class ProfiledRunnable implements Runnable {
         private final String poolName;
@@ -68,7 +70,9 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
 
         super.allowCoreThreadTimeOut(true);
 
-        maxPoolSize.addAndCallListener((oldVal, newVal) -> this.setMaxPoolSize(newVal));
+        this.maxPoolSizeSubscription = maxPoolSize
+                .createSubscription()
+                .setAndCallListener((oldVal, newVal) -> this.setMaxPoolSize(newVal));
 
         profiler.attachIndicator(queueIndicatorName, () -> (long) this.getQueue().size());
         profiler.attachIndicator(activeThreadsIndicatorName, () -> (long) this.getActiveCount());
@@ -109,6 +113,8 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
         profiler.detachIndicator(queueIndicatorName);
         profiler.detachIndicator(activeThreadsIndicatorName);
         profiler.detachIndicator(poolSizeIndicatorName);
+        maxPoolSizeSubscription.close();
+        super.terminated();
     }
 
     public void setMaxPoolSize(int maxPoolSize) {

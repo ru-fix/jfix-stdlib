@@ -23,8 +23,8 @@ class FileWatcher : AutoCloseable {
     val watchService = FileSystems.getDefault().newWatchService()
 
     fun register(filePath: Path, listener: (Path) -> Unit) {
-        val filePath = filePath.toAbsolutePath()
-        val dir = filePath.parent
+        val absoluteFilePath = filePath.toAbsolutePath()
+        val dir = absoluteFilePath.parent
 
         if (!dirToKey.contains(dir)) {
             val key = dir.register(watchService, StandardWatchEventKinds.ENTRY_MODIFY)
@@ -34,18 +34,18 @@ class FileWatcher : AutoCloseable {
         }
         keyToFileNameListeners
                 .computeIfAbsent(dirToKey.getValue(dir)) { HashMap() }
-                .put(filePath.fileName, listener)
+                .put(absoluteFilePath.fileName, listener)
     }
 
     fun unregister(filePath: Path) {
-        val filePath = filePath.toAbsolutePath()
-        val dir = filePath.parent
+        val absoluteFilePath = filePath.toAbsolutePath()
+        val dir = absoluteFilePath.parent
         val key = dirToKey[dir] ?: return
 
         keyToFileNameListeners.compute(key) { _, fileNameListeners ->
             requireNotNull(fileNameListeners)
 
-            fileNameListeners.remove(filePath.fileName)
+            fileNameListeners.remove(absoluteFilePath.fileName)
             if (fileNameListeners.isNotEmpty()) {
                 fileNameListeners
             } else {

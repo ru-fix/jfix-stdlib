@@ -4,12 +4,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
-import ru.fix.dynamic.property.api.DynamicPropertyListener;
+import ru.fix.dynamic.property.api.PropertySubscription;
 
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Wrapper under runnable task. Save and check schedule value. If value was changed, task will be rescheduled.
@@ -27,6 +28,7 @@ public class ReschedulableScheduler implements AutoCloseable {
 
     /**
      * ReschedulableScheduler based on {@link ProfiledScheduledThreadPoolExecutor} created with given parameters
+     *
      * @param poolName will be used as
      */
     public ReschedulableScheduler(String poolName, DynamicProperty<Integer> maxPoolSize, Profiler profiler) {
@@ -123,7 +125,7 @@ public class ReschedulableScheduler implements AutoCloseable {
 
         private Schedule previousSchedule;
         private DynamicProperty<Schedule> schedule;
-        private DynamicPropertyListener<Schedule> scheduleListener;
+        private PropertySubscription<Schedule> scheduleSubscription;
         private final long startDelay;
 
         private ScheduledFuture<?> scheduledFuture;
@@ -131,6 +133,7 @@ public class ReschedulableScheduler implements AutoCloseable {
         private final Runnable task;
         private final ReschedulableSchedullerFuture reschedulableFuture =
                 new ReschedulableSchedullerFuture(this);
+
         private Consumer<SelfSchedulableTaskWrapper> cancelHandler;
 
         private final ScheduledExecutorService executorService;
@@ -157,7 +160,7 @@ public class ReschedulableScheduler implements AutoCloseable {
         @SuppressWarnings("squid:S1181")
         public void run() {
             ScheduledFuture<?> scheduledFuture;
-            synchronized (this){
+            synchronized (this) {
                 scheduledFuture = this.scheduledFuture;
             }
 
@@ -232,33 +235,37 @@ public class ReschedulableScheduler implements AutoCloseable {
         }
 
         private synchronized void checkPreviousScheduleAndRestartTask(Schedule schedule) {
-            if (reschedulableFuture.isCancelled()) {
+            if (scheduledFuture != null && scheduledFuture.isCancelled()) {
+                return;
+            }
+            if (previousSchedule != null && previousSchedule.equals(schedule)) {
                 return;
             }
 
-            if (!previousSchedule.equals(schedule)) {
-                previousSchedule = schedule;
+            previousSchedule = schedule;
+
+            if (scheduledFuture != null) {
                 log.trace("checkPreviousScheduleAndRestartTask cancelling  scheduledFuture {} with hash={}",
                         scheduledFuture, System.identityHashCode(scheduledFuture));
-
                 this.scheduledFuture.cancel(false);
-                this.scheduledFuture = schedule(this, schedule, this.startDelay);
-
-                log.trace("checkPreviousScheduleAndRestartTask new scheduledFuture {} with hash={} is scheduled",
-                        scheduledFuture, System.identityHashCode(scheduledFuture));
             }
+
+            this.scheduledFuture = schedule(this, schedule, this.startDelay);
+
+            log.trace("checkPreviousScheduleAndRestartTask new scheduledFuture {} with hash={} is scheduled",
+                    scheduledFuture, System.identityHashCode(scheduledFuture));
+
         }
 
         public synchronized ScheduledFuture<?> launch() {
-            this.scheduleListener = (oldVal, newVal) -> this.checkPreviousScheduleAndRestartTask(newVal);
-            this.schedule.addListener(this.scheduleListener);
-            Schedule schedule = this.schedule.get();
 
-            this.scheduledFuture = schedule(this, schedule, this.startDelay);
-            previousSchedule = schedule;
+            this.scheduleSubscription = this.schedule
+                    .createSubscription()
+                    .setAndCallListener((oldVal, newVal) -> this.checkPreviousScheduleAndRestartTask(newVal));
 
             log.trace("scheduledFuture={} with hash={} is launched",
                     scheduledFuture, System.identityHashCode(scheduledFuture));
+
             return reschedulableFuture;
         }
 
@@ -281,14 +288,14 @@ public class ReschedulableScheduler implements AutoCloseable {
 
         }
 
-        synchronized ScheduledFuture<?> getSchedullerFuture() {
-            return scheduledFuture;
+        synchronized <T> T accessScheduledFuture(Function<ScheduledFuture<?>, T> accesssor) {
+            return accesssor.apply(scheduledFuture);
         }
 
         public synchronized void cancel(boolean mayInterruptIfRunning) {
             log.trace("cancelling scheduledFuture {} with hash={}",
                     scheduledFuture, System.identityHashCode(scheduledFuture));
-            schedule.removeListener(this.scheduleListener);
+            scheduleSubscription.close();
             scheduledFuture.cancel(mayInterruptIfRunning);
             cancelHandler.accept(this);
         }
@@ -304,12 +311,12 @@ public class ReschedulableScheduler implements AutoCloseable {
 
         @Override
         public long getDelay(TimeUnit unit) {
-            return taskWrapper.getSchedullerFuture().getDelay(unit);
+            return taskWrapper.accessScheduledFuture(future -> future.getDelay(unit));
         }
 
         @Override
         public int compareTo(Delayed o) {
-            return taskWrapper.getSchedullerFuture().compareTo(o);
+            return taskWrapper.accessScheduledFuture(future -> future.compareTo(o));
         }
 
         @Override
@@ -320,23 +327,23 @@ public class ReschedulableScheduler implements AutoCloseable {
 
         @Override
         public boolean isCancelled() {
-            return taskWrapper.getSchedullerFuture().isCancelled();
+            return taskWrapper.accessScheduledFuture(future -> future.isCancelled());
         }
 
         @Override
         public boolean isDone() {
-            return taskWrapper.getSchedullerFuture().isDone();
+            return taskWrapper.accessScheduledFuture(future -> future.isDone());
         }
 
         @Override
         public Object get() throws InterruptedException, ExecutionException {
-            return taskWrapper.getSchedullerFuture().get();
+            return taskWrapper.accessScheduledFuture(Function.identity()).get();
         }
 
         @Override
         public Object get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException,
                 TimeoutException {
-            return taskWrapper.getSchedullerFuture().get(timeout, unit);
+            return taskWrapper.accessScheduledFuture(Function.identity()).get(timeout, unit);
         }
     }
 
@@ -372,7 +379,6 @@ public class ReschedulableScheduler implements AutoCloseable {
                     '}';
         }
     }
-
 
     /**
      * Same as {@link #shutdown()}

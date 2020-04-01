@@ -3,6 +3,7 @@ package ru.fix.stdlib.concurrency.futures;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.fix.dynamic.property.api.DynamicProperty;
+import ru.fix.dynamic.property.api.PropertySubscription;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -22,9 +23,12 @@ public class PendingFutureLimiter {
 
     private final AtomicLong counter = new AtomicLong();
     private final ConcurrentHashMap<CompletableFuture, Long> pendingCompletableFutures = new ConcurrentHashMap<>();
-    private volatile int maxPendingCount;
+    private final PropertySubscription<Integer> maxPendingCountSubscription;
+    private final PropertySubscription<Long> maxFutureExecuteTimeoutSubscription;
+
+    private volatile int maxPendingCount = 100;
     private volatile float thresholdFactor = 0.3f;
-    private volatile long maxFutureExecuteTime;
+    private volatile long maxFutureExecuteTime = 0;
     private volatile long pendingQueueSizeChangeCheckInteval = TimeUnit.MINUTES.toMillis(1);
 
     private ThresholdListener thresholdListener;
@@ -41,6 +45,8 @@ public class PendingFutureLimiter {
     public PendingFutureLimiter(int maxPendingCount, long maxFutureExecuteTimeout) {
         this.maxPendingCount = maxPendingCount;
         this.maxFutureExecuteTime = maxFutureExecuteTimeout;
+        this.maxPendingCountSubscription = null;
+        this.maxFutureExecuteTimeoutSubscription = null;
     }
 
     /**
@@ -53,11 +59,13 @@ public class PendingFutureLimiter {
      *                                from the queue
      */
     public PendingFutureLimiter(DynamicProperty<Integer> maxPendingCount, DynamicProperty<Long> maxFutureExecuteTimeout) {
-        this.maxPendingCount = maxPendingCount.get();
-        this.maxFutureExecuteTime = maxFutureExecuteTimeout.get();
+        this.maxPendingCountSubscription = maxPendingCount
+                .createSubscription()
+                .setAndCallListener((oldValue, newValue) -> setMaxPendingCount(newValue));
 
-        maxPendingCount.addListener((oldValue, newValue) -> setMaxPendingCount(newValue));
-        maxFutureExecuteTimeout.addListener((oldValue, newValue) -> setMaxFutureExecuteTime(newValue));
+        this.maxFutureExecuteTimeoutSubscription = maxFutureExecuteTimeout
+                .createSubscription()
+                .setAndCallListener((oldValue, newValue) -> setMaxFutureExecuteTime(newValue));
     }
 
     private static int calculateThreshold(int maxPendingCount, float thresholdFactor) {
