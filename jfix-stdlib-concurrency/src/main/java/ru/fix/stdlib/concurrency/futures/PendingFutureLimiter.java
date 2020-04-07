@@ -285,9 +285,11 @@ public class PendingFutureLimiter {
         Predicate<Map.Entry<CompletableFuture, Long>> isTimeoutPredicate =
                 entry -> System.currentTimeMillis() - entry.getValue() > maxFutureExecuteTime;
 
-        log.error(errorMessage);
-
         pendingCompletableFutures.entrySet().stream().filter(isTimeoutPredicate).forEach(completeExceptionally);
+
+        if (pendingCompletableFutures.entrySet().stream().anyMatch(isTimeoutPredicate)) {
+            log.error(errorMessage);
+        }
     }
 
     public interface ThresholdListener {
