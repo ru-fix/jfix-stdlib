@@ -151,7 +151,7 @@ class RateLimitedDispatcherTest {
                                  call: ProfiledCall,
                                  counter: AtomicInteger): CompletableFuture<Int> {
         return dispatcher.compose {
-            call.profileFuture {
+            call.profile<CompletableFuture<Int>> {
                 CompletableFuture.supplyAsync { counter.getAndIncrement() }
             }
         }
