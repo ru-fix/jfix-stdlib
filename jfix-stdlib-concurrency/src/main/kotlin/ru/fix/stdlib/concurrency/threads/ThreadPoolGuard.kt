@@ -6,10 +6,12 @@ import java.lang.management.ManagementFactory
 import java.lang.management.ThreadInfo
 import java.util.concurrent.ForkJoinPool
 
-open class ThreadPoolGuard(profiler: Profiler,
-                           checkRate: DynamicProperty<Schedule>,
-                           private val predicate: () -> Boolean,
-                           private val listener: (queueSize: Int, threadDump: String) -> Unit) : AutoCloseable {
+open class ThreadPoolGuard(
+        profiler: Profiler,
+        checkRate: DynamicProperty<Schedule>,
+        private val predicate: () -> Boolean,
+        private val listener: (queueSize: Int, threadDump: String) -> Unit
+) : AutoCloseable {
 
     private val scheduler = NamedExecutors.newScheduler(
             "thread-pool-guard",
@@ -17,13 +19,13 @@ open class ThreadPoolGuard(profiler: Profiler,
             profiler)
 
     init {
-        scheduler.schedule(checkRate, 0, Runnable {
+        scheduler.schedule(checkRate, 0) {
             val queueSize = ForkJoinPool.commonPool().queuedSubmissionCount
 
             if (predicate()) {
                 listener(queueSize, buildDump())
             }
-        })
+        }
     }
 
     private fun buildDump(): String {
@@ -34,15 +36,17 @@ open class ThreadPoolGuard(profiler: Profiler,
             if (threadInfo == null) {
                 continue
             }
-            dump.append("\"")
-            dump.append(threadInfo.threadName)
-            dump.append("\" ")
             val state = threadInfo.threadState
-            dump.append(state)
+            dump
+                    .append("\"")
+                    .append(threadInfo.threadName)
+                    .append("\" ")
+                    .append(state)
             val stackTraceElements = threadInfo.stackTrace
             for (stackTraceElement in stackTraceElements) {
-                dump.append("\n    at ")
-                dump.append(stackTraceElement)
+                dump
+                        .append("\n    at ")
+                        .append(stackTraceElement)
             }
             dump.append("\n")
         }

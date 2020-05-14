@@ -16,13 +16,13 @@ import java.util.function.Function;
  * Wrapper under runnable task. Save and check schedule value. If value was changed, task will be rescheduled.
  */
 public class ReschedulableScheduler implements AutoCloseable {
-    private static final long DEFAULT_START_DELAY = 0;
+    private static final long DEFAULT_START_DELAY = 0L;
 
     private final ScheduledExecutorService executorService;
 
     private final Set<SelfSchedulableTaskWrapper> activeTasks;
     private final Profiler profiler;
-    private final AtomicBoolean isShutdown = new AtomicBoolean(false);
+    private volatile boolean isShutdown = false;
     private final Logger log;
     private final String scheduledTasksIndicatorName;
 
@@ -50,10 +50,10 @@ public class ReschedulableScheduler implements AutoCloseable {
      * @return result task from executionService
      */
     public ScheduledFuture<?> schedule(DynamicProperty<Schedule> scheduleSupplier,
-                                       long startDelay,
+                                       DynamicProperty<Long> startDelay,
                                        Runnable task) {
 
-        if (isShutdown.get()) {
+        if (isShutdown) {
             throw new IllegalStateException("ReschedulableScheduler is shutdown and can not schedule new task." +
                     " Task: " + task);
         }
@@ -69,6 +69,10 @@ public class ReschedulableScheduler implements AutoCloseable {
 
         activeTasks.add(taskWrapper);
         return taskWrapper.launch();
+    }
+
+    public ScheduledFuture<?> schedule(DynamicProperty<Schedule> scheduleSupplier, long startDelay, Runnable task) {
+        return schedule(scheduleSupplier, DynamicProperty.of(startDelay), task);
     }
 
     /**
@@ -89,7 +93,7 @@ public class ReschedulableScheduler implements AutoCloseable {
         cancelAllTasks(false);
         executorService.shutdown();
         detachIndicators();
-        isShutdown.set(true);
+        isShutdown = true;
     }
 
     /**
@@ -101,7 +105,7 @@ public class ReschedulableScheduler implements AutoCloseable {
         cancelAllTasks(true);
         executorService.shutdownNow();
         detachIndicators();
-        isShutdown.set(true);
+        isShutdown = true;
     }
 
     private void cancelAllTasks(boolean mayInterruptIfRunning) {
@@ -124,9 +128,9 @@ public class ReschedulableScheduler implements AutoCloseable {
         private final Logger log;
 
         private Schedule previousSchedule;
-        private DynamicProperty<Schedule> schedule;
+        private final DynamicProperty<Schedule> schedule;
         private PropertySubscription<Schedule> scheduleSubscription;
-        private final long startDelay;
+        private final DynamicProperty<Long> startDelay;
 
         private ScheduledFuture<?> scheduledFuture;
 
@@ -134,16 +138,16 @@ public class ReschedulableScheduler implements AutoCloseable {
         private final ReschedulableSchedullerFuture reschedulableFuture =
                 new ReschedulableSchedullerFuture(this);
 
-        private Consumer<SelfSchedulableTaskWrapper> cancelHandler;
+        private final Consumer<SelfSchedulableTaskWrapper> cancelHandler;
 
         private final ScheduledExecutorService executorService;
 
         private volatile ScheduleSettings settings;
-        private volatile long lastExecutedTs = 0;
-        private AtomicBoolean taskIsRunning = new AtomicBoolean(false);
+        private volatile long lastExecutedTs = 0L;
+        private final AtomicBoolean taskIsRunning = new AtomicBoolean(false);
 
         public SelfSchedulableTaskWrapper(DynamicProperty<Schedule> schedule,
-                                          long startDelay,
+                                          DynamicProperty<Long> startDelay,
                                           Runnable task,
                                           ScheduledExecutorService executorService,
                                           Consumer<SelfSchedulableTaskWrapper> cancelHandler,
@@ -250,7 +254,7 @@ public class ReschedulableScheduler implements AutoCloseable {
                 this.scheduledFuture.cancel(false);
             }
 
-            this.scheduledFuture = schedule(this, schedule, this.startDelay);
+            this.scheduledFuture = schedule(this, schedule, this.startDelay.get());
 
             log.trace("checkPreviousScheduleAndRestartTask new scheduledFuture {} with hash={} is scheduled",
                     scheduledFuture, System.identityHashCode(scheduledFuture));
@@ -288,8 +292,8 @@ public class ReschedulableScheduler implements AutoCloseable {
 
         }
 
-        synchronized <T> T accessScheduledFuture(Function<ScheduledFuture<?>, T> accesssor) {
-            return accesssor.apply(scheduledFuture);
+        synchronized <T> T accessScheduledFuture(Function<ScheduledFuture<?>, T> accessor) {
+            return accessor.apply(scheduledFuture);
         }
 
         public synchronized void cancel(boolean mayInterruptIfRunning) {

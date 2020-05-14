@@ -27,13 +27,9 @@ class ReschedulableSchedulerTest {
         val scheduler = NamedExecutors.newSingleThreadScheduler("", NoopProfiler())
         val latch = CountDownLatch(3)
 
-        scheduler.schedule(
-                DynamicProperty.of(Schedule.withRate(1)),
-                0,
-                Runnable {
-                    latch.countDown()
-                }
-        )
+        scheduler.schedule(DynamicProperty.of(Schedule.withRate(1)), 0) {
+            latch.countDown()
+        }
 
         assertTrue(latch.await(10, SECONDS))
 
@@ -46,13 +42,9 @@ class ReschedulableSchedulerTest {
         val scheduler = NamedExecutors.newSingleThreadScheduler("", NoopProfiler())
         val latch = CountDownLatch(3)
 
-        scheduler.schedule(
-                DynamicProperty.of(Schedule.withDelay(1)),
-                0,
-                Runnable {
-                    latch.countDown()
-                }
-        )
+        scheduler.schedule(DynamicProperty.of(Schedule.withDelay(1)), 0) {
+            latch.countDown()
+        }
 
         assertTrue(latch.await(10, SECONDS))
 
@@ -73,27 +65,23 @@ class ReschedulableSchedulerTest {
 
         val secondTaskIsLaunchedInParallelWithFirstLongTask = AtomicBoolean(false)
 
-        scheduler.schedule(
-                Schedule.withRate(DynamicProperty.of(1)),
-                0,
-                Runnable {
-                    if (counter.getAndIncrement() == 0) {
-                        //first task
-                        firstTaskIsRunning.set(true)
-                        //wait and give an opportunity to the second task to be launched
-                        Thread.sleep(1000)
-                        firstTaskIsRunning.set(false)
-                        firstTaskLatch.countDown()
-                    } else {
-                        //other tasks that should not run
-                        //while first one not finished
-                        if (firstTaskIsRunning.get()) {
-                            secondTaskIsLaunchedInParallelWithFirstLongTask.set(true)
-                        }
-                        secondTaskLatch.countDown()
-                    }
+        scheduler.schedule(Schedule.withRate(DynamicProperty.of(1)), 0) {
+            if (counter.getAndIncrement() == 0) {
+                //first task
+                firstTaskIsRunning.set(true)
+                //wait and give an opportunity to the second task to be launched
+                Thread.sleep(1000)
+                firstTaskIsRunning.set(false)
+                firstTaskLatch.countDown()
+            } else {
+                //other tasks that should not run
+                //while first one not finished
+                if (firstTaskIsRunning.get()) {
+                    secondTaskIsLaunchedInParallelWithFirstLongTask.set(true)
                 }
-        )
+                secondTaskLatch.countDown()
+            }
+        }
 
         assertTrue(firstTaskLatch.await(10, SECONDS))
         assertTrue(secondTaskLatch.await(10, SECONDS))
@@ -110,13 +98,10 @@ class ReschedulableSchedulerTest {
 
         val latch = CountDownLatch(2)
 
-        val schedule = scheduler.schedule(
-                Schedule.withRate(DynamicProperty.of(1)),
-                0,
-                Runnable {
-                    latch.countDown()
-                    throw RuntimeException("unexpected exception")
-                })
+        val schedule = scheduler.schedule(Schedule.withRate(DynamicProperty.of(1)), 0) {
+            latch.countDown()
+            throw RuntimeException("unexpected exception")
+        }
 
         assertTrue(latch.await(10, SECONDS))
 
@@ -160,7 +145,7 @@ class ReschedulableSchedulerTest {
 
         val property = AtomicProperty(TimeUnit.HOURS.toMillis(1))
 
-        scheduler.schedule(Schedule.withDelay(property), Runnable {
+        scheduler.schedule(Schedule.withDelay(property)) {
             taskExecutionCounter.incrementAndGet()
 
             if (1 == taskExecutionCounter.get()) {
@@ -168,7 +153,7 @@ class ReschedulableSchedulerTest {
             } else {
                 countDownLatch.countDown()
             }
-        })
+        }
 
         assertTrue(countDownLatchOfFirstTaskExecution.await(20, SECONDS))
         assertEquals(1, taskExecutionCounter.get())
@@ -236,5 +221,31 @@ class ReschedulableSchedulerTest {
         scheduler.shutdown()
         report = reporter.buildReportAndReset()
         assertFalse(report.indicators.containsKey(identity))
+    }
+
+    @Test
+    fun `scheduled task with dynamic initial delay`() {
+        val scheduler = NamedExecutors.newSingleThreadScheduler("", NoopProfiler())
+        val latch = CountDownLatch(1)
+
+        // too big delay/initialDelay
+        val delay = TimeUnit.DAYS.toMillis(1)
+        val schedule = AtomicProperty(Schedule.withDelay(delay))
+        val initialDelay = AtomicProperty(delay)
+        scheduler.schedule(schedule, initialDelay) {
+            latch.countDown()
+        }
+
+        assertFalse(latch.await(3, SECONDS))
+
+        // change schedule to force rescheduling
+        // and change initialDelay to check if it was applied
+        initialDelay.set(0L)
+        schedule.set(Schedule.withDelay(TimeUnit.HOURS.toMillis(12)))
+
+        assertTrue(latch.await(10, SECONDS))
+
+        scheduler.shutdown()
+        assertTrue(scheduler.awaitTermination(10, SECONDS))
     }
 }
