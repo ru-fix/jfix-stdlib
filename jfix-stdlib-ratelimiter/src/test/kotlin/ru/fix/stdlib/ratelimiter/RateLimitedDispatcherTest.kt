@@ -14,26 +14,24 @@ import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.function.BiFunction
-import java.util.stream.Collectors
 
 class RateLimitedDispatcherTest {
 
     @Test
     fun testSubmitIncrementThroughput() {
         createDispatcher(2000).use {
-            assertTimeoutPreemptively(Duration.ofSeconds(15), {
-                testThroughput(BiFunction { call, counter -> this.submitIncrement(it, call, counter) })
-            })
+            assertTimeoutPreemptively(Duration.ofSeconds(15)) {
+                testThroughput { call, counter -> submitIncrement(it, call, counter) }
+            }
         }
     }
 
     @Test
     fun testComposeIncrementThroughput() {
         createDispatcher(2000).use {
-            assertTimeoutPreemptively(Duration.ofSeconds(15), {
-                testThroughput(BiFunction { call, counter -> this.composeIncrement(it, call, counter) })
-            })
+            assertTimeoutPreemptively(Duration.ofSeconds(15)) {
+                testThroughput { call, counter -> composeIncrement(it, call, counter) }
+            }
         }
     }
 
@@ -55,15 +53,14 @@ class RateLimitedDispatcherTest {
                     //Due to blocking nature of dispatch.close we hae to use sleep
                     Thread.sleep(1000)
                 }
-                val futures = ArrayList<CompletableFuture<*>>()
-                for (i in 1..3) {
-                    futures.add(dispatch.submit({ }))
+                val futures = List(3) {
+                    dispatch.submit { }
                 }
 
                 blockingTaskIsStarted.await()
                 dispatch.close()
 
-                CompletableFuture.allOf(*futures.toTypedArray()).exceptionally { null } .join()
+                CompletableFuture.allOf(*futures.toTypedArray()).exceptionally { null }.join()
 
                 futures.forEach { future: CompletableFuture<*> ->
                     assertTrue(future.isDone)
@@ -110,7 +107,7 @@ class RateLimitedDispatcherTest {
     }
 
 
-    private fun testThroughput(biFunction: BiFunction<ProfiledCall, AtomicInteger, CompletableFuture<Int>>) {
+    private fun testThroughput(biFunction: (ProfiledCall, AtomicInteger) -> CompletableFuture<Int>) {
         val counter = AtomicInteger(0)
         val profiler = AggregatingProfiler()
         val profilerReporter = profiler.createReporter()
@@ -118,18 +115,15 @@ class RateLimitedDispatcherTest {
         profilerReporter.buildReportAndReset()
         val profiledCall = profiler.profiledCall(RateLimitedDispatcher::class.toString())
 
-        val features = ArrayList<CompletableFuture<Int>>()
-        for (i in 0 until ITERATIONS) {
-            features.add(biFunction.apply(profiledCall, counter))
+        val features = List(ITERATIONS) {
+            biFunction.invoke(profiledCall, counter)
         }
 
         CompletableFuture.allOf(*features.toTypedArray()).join()
         val report = profilerReporter.buildReportAndReset().profilerCallReports[0]
 
         val results = features
-                .stream()
-                .map<Int>({ it.join() })
-                .collect(Collectors.toList())
+                .map { it.join() }
 
         for (i in 0 until ITERATIONS) {
             assertTrue(results.contains(i))
@@ -147,10 +141,9 @@ class RateLimitedDispatcherTest {
                                 call: ProfiledCall,
                                 counter: AtomicInteger): CompletableFuture<Int> {
         return dispatcher.submit {
-            call.start()
-            val result = counter.getAndIncrement()
-            call.stop()
-            result
+            call.profile<Int> {
+                counter.getAndIncrement()
+            }
         }
     }
 
@@ -158,10 +151,9 @@ class RateLimitedDispatcherTest {
                                  call: ProfiledCall,
                                  counter: AtomicInteger): CompletableFuture<Int> {
         return dispatcher.compose {
-            call.start()
-            val future = CompletableFuture.supplyAsync<Int>({ counter.getAndIncrement() })
-            call.stop()
-            future
+            call.profileFuture {
+                CompletableFuture.supplyAsync { counter.getAndIncrement() }
+            }
         }
     }
 
