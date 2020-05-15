@@ -20,8 +20,8 @@ private const val AWAIT_TERMINATION_PERIOD_MS = 60_000L
  * */
 class EventReducer<ReceivingEventT, ReducedEventT>(
         profiler: Profiler,
-        private val handler: (ReducedEventT) -> Unit,
-        private val reduceFunction: (accumulatedEvent: ReducedEventT?, newEvent: ReceivingEventT) -> ReducedEventT,
+        private val handler: (ReducedEventT?) -> Unit,
+        private val reduceFunction: (accumulatedEvent: ReducedEventT?, newEvent: ReceivingEventT?) -> ReducedEventT?,
         private val shutdownCheckPeriodMs: Long = DEFAULT_SHUTDOWN_CHECK_PERIOD_MS,
         private val awaitTerminationPeriodMs: Long = AWAIT_TERMINATION_PERIOD_MS
 ) : AutoCloseable {
@@ -29,12 +29,12 @@ class EventReducer<ReceivingEventT, ReducedEventT>(
             "event reducer", profiler
     )
 
-    private val awaitingEventQueue = ArrayBlockingQueue<ReducedEventT>(1)
+    private val awaitingEventQueue = ArrayBlockingQueue<ReducedEventT?>(1)
 
-    fun handleEvent(event: ReceivingEventT) = synchronized(awaitingEventQueue) {
+    fun handleEvent(event: ReceivingEventT? = null) = synchronized(awaitingEventQueue) {
         var accumulatedEvent: ReducedEventT? = awaitingEventQueue.poll()
         accumulatedEvent = reduceFunction.invoke(accumulatedEvent, event)
-        awaitingEventQueue.put(accumulatedEvent!!)
+        awaitingEventQueue.put(accumulatedEvent)
     }
 
     fun start() {
@@ -81,13 +81,13 @@ class EventReducer<ReceivingEventT, ReducedEventT>(
         @JvmStatic
         fun <EventT> lastEventWinReducer(
                 profiler: Profiler,
-                handler: (EventT) -> Unit,
+                handler: (EventT?) -> Unit,
                 shutdownCheckPeriodMs: Long = DEFAULT_SHUTDOWN_CHECK_PERIOD_MS,
                 awaitTerminationPeriodMs: Long = AWAIT_TERMINATION_PERIOD_MS
         ) = EventReducer(
                 profiler = profiler,
                 handler = handler,
-                reduceFunction = { _: EventT?, event: EventT -> event },
+                reduceFunction = { _: EventT?, event: EventT? -> event },
                 shutdownCheckPeriodMs = shutdownCheckPeriodMs,
                 awaitTerminationPeriodMs = awaitTerminationPeriodMs
         )
