@@ -2,7 +2,6 @@ package ru.fix.stdlib.concurrency.events
 
 import mu.KotlinLogging
 import java.util.concurrent.*
-import java.util.concurrent.locks.ReentrantLock
 
 
 /**
