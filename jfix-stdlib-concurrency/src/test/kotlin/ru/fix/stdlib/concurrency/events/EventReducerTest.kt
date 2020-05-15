@@ -1,10 +1,12 @@
 package ru.fix.stdlib.concurrency.events
 
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
+import ru.fix.aggregating.profiler.NoopProfiler
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -16,7 +18,7 @@ internal class EventReducerTest {
     @Test
     fun `WHEN handle single time THEN handler invoked one time`() {
         val invokes = ArrayBlockingQueue<Any>(1)
-        EventReducer(handler = {
+        EventReducer(profiler = NoopProfiler(), handler = {
             invokes.put(Any())
         }).use {
             it.start()
@@ -31,7 +33,7 @@ internal class EventReducerTest {
         val eventsQuantity = 10
         val invokes = ArrayBlockingQueue<Any>(2)
         val awaitingEventsFromAllThreadsLatch = CountDownLatch(eventsQuantity)
-        EventReducer(handler = {
+        EventReducer(profiler = NoopProfiler(), handler = {
             invokes.put(Any())
             awaitingEventsFromAllThreadsLatch.await() //simulate slow handler
         }).use { reducer ->
@@ -57,7 +59,7 @@ internal class EventReducerTest {
     fun `WHEN handle event after invoking handler THEN handler will be invoked after completing`() {
         val invokes = ArrayBlockingQueue<Any>(1)
         val holdHandlerInvocationLock = ReentrantLock().apply { lock() }
-        EventReducer(handler = {
+        EventReducer(profiler = NoopProfiler(), handler = {
             invokes.put(Any())
             holdHandlerInvocationLock.lock()
         }).use { reducer ->
@@ -79,6 +81,7 @@ internal class EventReducerTest {
         val eventReducer = EventReducer(
                 awaitTerminationPeriodMs = awaitTerminationPeriodMs,
                 shutdownCheckPeriodMs = shutdownCheckPeriodMs,
+                profiler = NoopProfiler(),
                 handler = {
                     invokes.put(Any())
                 }
