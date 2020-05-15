@@ -8,17 +8,18 @@ import java.util.concurrent.TimeUnit
 
 
 /**
- * EventReducer invokes given [handler] when [handle] function was invoked.
- * If [handle] function was invoked (one or many times) during [handler] working,
+ * EventReducer invokes given [handler] when [handleEvent] function was invoked.
+ * If [handleEvent] function was invoked (one or many times) during [handler] working,
  * [handler] will be invoked after completing and so on.
  *
- * Therefore if [handle] function was invoked 100 times with breaks in 1 millisecond,
+ * Therefore if [handleEvent] function was invoked 100 times with breaks in 1 millisecond,
  * and [handler]'s work takes 70 milliseconds,
  * then [handler] wasn't invoked 100 times, but 3 times, consistently.
  * */
-class EventReducer(
+class EventReducer<EventT>(
         profiler: Profiler,
-        private val handler: () -> Unit,
+        private val handler: (EventT) -> Unit,
+        private val reduceFunction: (accumulatedEvent: EventT?, newEvent: EventT) -> EventT = { _, event -> event },
         private val shutdownCheckPeriodMs: Long = 1_000,
         private val awaitTerminationPeriodMs: Long = 60_000
 ) : AutoCloseable {
@@ -26,44 +27,42 @@ class EventReducer(
             "event reducer", profiler
     )
 
-    private val awaitingEventQueue = ArrayBlockingQueue<Any>(1)
+    private val awaitingEventQueue = ArrayBlockingQueue<EventT>(1)
 
-    fun handle() = synchronized(awaitingEventQueue) {
-        if (awaitingEventQueue.isEmpty()) {
-            awaitingEventQueue.put(Any())
-        }
+    fun handleEvent(event: EventT) = synchronized(awaitingEventQueue) {
+        var accumulatedEvent: EventT? = awaitingEventQueue.poll()
+        accumulatedEvent = reduceFunction.invoke(accumulatedEvent, event)
+        awaitingEventQueue.put(accumulatedEvent!!)
     }
 
     fun start() {
         eventReceivingExecutor.submit(Runnable {
             while (true) {
-                when (awaitEventOrShutdown()) {
-                    AwaitingResult.EVENT -> handler.invoke()
-                    AwaitingResult.SHUTDOWN -> return@Runnable
-                    AwaitingResult.ERROR -> {
-                    }
+                val event = awaitEventOrShutdown()
+                if (event != null) {
+                    handler.invoke(event)
                 }
+                if (eventReceivingExecutor.isShutdown) {
+                    return@Runnable
+                } //else unexpected exception, it's already logged
             }
         })
     }
 
-    private enum class AwaitingResult {
-        EVENT, SHUTDOWN, ERROR
-    }
-
-    private fun awaitEventOrShutdown(): AwaitingResult {
+    private fun awaitEventOrShutdown(): EventT? {
         try {
-            while (awaitingEventQueue.poll(shutdownCheckPeriodMs, TimeUnit.MILLISECONDS) == null) {
+            var receivedEvent: EventT? = null
+            while (receivedEvent == null) {
+                receivedEvent = awaitingEventQueue.poll(shutdownCheckPeriodMs, TimeUnit.MILLISECONDS)
                 if (eventReceivingExecutor.isShutdown) {
-                    return AwaitingResult.SHUTDOWN
+                    return null
                 }
             }
+            return receivedEvent
         } catch (e: Exception) {
             log.error("waiting event was interrupted", e)
-            return AwaitingResult.ERROR
         }
-        awaitingEventQueue.clear()
-        return AwaitingResult.EVENT
+        return null
     }
 
     override fun close() {
