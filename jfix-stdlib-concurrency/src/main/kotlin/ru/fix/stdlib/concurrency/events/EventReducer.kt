@@ -1,7 +1,9 @@
 package ru.fix.stdlib.concurrency.events
 
 import mu.KotlinLogging
-import java.util.concurrent.*
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 
 /**
@@ -29,7 +31,7 @@ class EventReducer(
     }
 
     fun start() {
-        CompletableFuture.runAsync(Runnable {
+        eventReceivingExecutor.submit(Runnable {
             while (true) {
                 when (awaitEventOrShutdown()) {
                     AwaitingResult.EVENT -> handler.invoke()
@@ -38,7 +40,7 @@ class EventReducer(
                     }
                 }
             }
-        }, eventReceivingExecutor)
+        })
     }
 
     private enum class AwaitingResult {
