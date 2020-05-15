@@ -62,9 +62,7 @@ class EventReducer(
             log.error("waiting event was interrupted", e)
             return AwaitingResult.ERROR
         }
-        synchronized(awaitingEventQueue) {
-            awaitingEventQueue.clear()
-        }
+        awaitingEventQueue.clear()
         return AwaitingResult.EVENT
     }
 
