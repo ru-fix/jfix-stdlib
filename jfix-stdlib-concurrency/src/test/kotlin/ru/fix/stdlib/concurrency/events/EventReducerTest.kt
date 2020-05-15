@@ -17,7 +17,7 @@ internal class EventReducerTest {
     @Test
     fun `WHEN handle single time THEN handler invoked one time`() {
         val invokes = ArrayBlockingQueue<Any>(1)
-        EventReducer<Any>(profiler = NoopProfiler(), handler = {
+        EventReducer.lastEventWinReducer<Any>(profiler = NoopProfiler(), handler = {
             invokes.put(it)
         }).use {
             it.start()
@@ -32,7 +32,7 @@ internal class EventReducerTest {
         val eventsQuantity = 10
         val invokes = ArrayBlockingQueue<Any>(2)
         val awaitingEventsFromAllThreadsLatch = CountDownLatch(eventsQuantity)
-        EventReducer<Any>(profiler = NoopProfiler(), handler = {
+        EventReducer.lastEventWinReducer<Any>(profiler = NoopProfiler(), handler = {
             invokes.put(it)
             awaitingEventsFromAllThreadsLatch.await() //simulate slow handler
         }).use { reducer ->
@@ -58,7 +58,7 @@ internal class EventReducerTest {
     fun `WHEN handle event after invoking handler THEN handler will be invoked after completing`() {
         val invokes = ArrayBlockingQueue<Any>(1)
         val holdHandlerInvocationLock = ReentrantLock().apply { lock() }
-        EventReducer<Any>(profiler = NoopProfiler(), handler = {
+        EventReducer.lastEventWinReducer<Any>(profiler = NoopProfiler(), handler = {
             invokes.put(it)
             holdHandlerInvocationLock.lock()
         }).use { reducer ->
@@ -77,7 +77,7 @@ internal class EventReducerTest {
             awaitTerminationPeriodMs: Long, shutdownCheckPeriodMs: Long
     ) {
         val invokes = ArrayBlockingQueue<Any>(1)
-        val eventReducer = EventReducer<Any>(
+        val eventReducer = EventReducer.lastEventWinReducer<Any>(
                 awaitTerminationPeriodMs = awaitTerminationPeriodMs,
                 shutdownCheckPeriodMs = shutdownCheckPeriodMs,
                 profiler = NoopProfiler(),
@@ -93,17 +93,13 @@ internal class EventReducerTest {
     }
 
     @Test
-    fun `WHEN custom reduce function provided THEN it used`() {
+    fun `WHEN receiving and reduced event types are equal AND custom reduce function provided THEN it used`() {
         val events = Array(50) { it }
         val invokes = ArrayBlockingQueue<Int>(events.size)
-        EventReducer<Int>(
+        EventReducer<Int, Int>(
                 profiler = NoopProfiler(),
-                reduceFunction = { accumulator, event ->
-                    event + (accumulator ?: 0)
-                },
-                handler = {
-                    invokes.put(it)
-                }
+                reduceFunction = { accumulator, event -> event + (accumulator ?: 0) },
+                handler = { invokes.put(it) }
         ).use {
             it.start()
 
@@ -118,6 +114,30 @@ internal class EventReducerTest {
             }
             assertNull(invokes.poll(1, TimeUnit.SECONDS))
             assertEquals(expectedEventSum, actualEventSum)
+        }
+    }
+
+    @Test
+    fun `WHEN receiving and reduced event types are different AND custom reduce function provided THEN it used`() {
+        val events = Array(50) { it }
+        val invokes = ArrayBlockingQueue<List<Int>>(events.size)
+        EventReducer<Int, MutableList<Int>>(
+                profiler = NoopProfiler(),
+                reduceFunction = { accumulator, event -> accumulator?.apply { add(event) } ?: mutableListOf(event) },
+                handler = { invokes.put(it) }
+        ).use {
+            it.start()
+
+            for (event in events) {
+                it.handleEvent(event)
+            }
+
+            val receivedEvents = mutableListOf<Int>()
+            while (receivedEvents.size < events.size) {
+                receivedEvents.addAll(invokes.poll(1, TimeUnit.SECONDS)!!)
+            }
+            assertNull(invokes.poll(1, TimeUnit.SECONDS))
+            assertEquals(events.toMutableList(), receivedEvents)
         }
     }
 
