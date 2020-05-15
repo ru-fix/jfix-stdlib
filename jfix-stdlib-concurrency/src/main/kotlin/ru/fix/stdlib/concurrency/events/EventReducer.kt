@@ -1,8 +1,9 @@
 package ru.fix.stdlib.concurrency.events
 
 import mu.KotlinLogging
+import ru.fix.aggregating.profiler.Profiler
+import ru.fix.stdlib.concurrency.threads.NamedExecutors
 import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 
@@ -16,11 +17,14 @@ import java.util.concurrent.TimeUnit
  * then [handler] wasn't invoked 100 times, but 3 times, consistently.
  * */
 class EventReducer(
+        profiler: Profiler,
         private val handler: () -> Unit,
         private val shutdownCheckPeriodMs: Long = 1_000,
         private val awaitTerminationPeriodMs: Long = 60_000
 ) : AutoCloseable {
-    private val eventReceivingExecutor = Executors.newSingleThreadExecutor()
+    private val eventReceivingExecutor = NamedExecutors.newSingleThreadPool(
+            "event reducer", profiler
+    )
 
     private val awaitingEventQueue = ArrayBlockingQueue<Any>(1)
 
