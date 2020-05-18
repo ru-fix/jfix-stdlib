@@ -35,6 +35,18 @@ internal class PendingFutureLimiterKTest {
         }
     }
 
+    @Test
+    fun `waitAll with timeout WHEN enqueue 2 completed future THEN limiter doesn't stuck`() {
+        var checkCounter = 0
+        assertTimeoutPreemptively(Duration.ofSeconds(10), { "failed on $checkCounter check" }) {
+            while (checkCounter < CHECKS_QUANTITY) {
+                checkCounter++
+                limiter.enqueueBlocking(CompletableFuture.completedFuture(null))
+                limiter.enqueueBlocking(CompletableFuture.completedFuture(null))
+                limiter.waitAll(internalTimeoutMs)
+            }
+        }
+    }
 
     @Test
     fun `waitAll with timeout WHEN enqueue completed future THEN limiter doesn't stuck`() {
