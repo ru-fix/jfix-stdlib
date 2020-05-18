@@ -90,6 +90,18 @@ internal class PendingFutureLimiterKTest {
         }
     }
 
+    @Test
+    fun `waitAll with timeout WHEN enqueue unlimited completed future THEN limiter doesn't stuck`() {
+        var checkCounter = 0
+        assertTimeoutPreemptively(Duration.ofSeconds(10), { "failed on $checkCounter check" }) {
+            while (checkCounter < CHECKS_QUANTITY) {
+                checkCounter++
+                limiter.enqueueUnlimited(CompletableFuture.completedFuture(null))
+                limiter.waitAll()
+            }
+        }
+    }
+
     companion object {
         val log = KotlinLogging.logger { }
     }
