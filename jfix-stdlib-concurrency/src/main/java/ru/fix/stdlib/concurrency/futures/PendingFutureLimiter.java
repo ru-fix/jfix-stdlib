@@ -243,7 +243,6 @@ public class PendingFutureLimiter {
                     return false;
                 }
                 if (counter.get() > 0) {
-                    counter.wait(pendingQueueSizeChangeCheckInteval);
                     long timeToWait = Math.min(pendingQueueSizeChangeCheckInteval, timeoutMillis - (System.currentTimeMillis() - start));
                     if (timeToWait > 0) {
                         counter.wait(timeToWait);
