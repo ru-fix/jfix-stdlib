@@ -81,17 +81,17 @@ class EventReducer<ReceivingEventT, ReducedEventT>(
      * Until this function is called, all received events will be accumulated
      * */
     fun start() {
-        eventReceivingExecutor.submit(Runnable {
+        eventReceivingExecutor.execute {
             while (true) {
                 val event = awaitEventOrShutdown()
                 if (event != null) {
                     handler.invoke(event)
                 }
                 if (eventReceivingExecutor.isShutdown) {
-                    return@Runnable
+                    return@execute
                 } //else unexpected exception, it's already logged
             }
-        })
+        }
     }
 
     private fun awaitEventOrShutdown(): ReducedEventT? {
