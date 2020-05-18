@@ -12,6 +12,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 
+private const val INVOCATION_TIMEOUT_MS = 500L
+
 internal class EventReducerTest {
 
     @Test
@@ -22,8 +24,8 @@ internal class EventReducerTest {
         }).use {
             it.start()
             it.handleEvent(Any())
-            assertNotNull(invokes.poll(1, TimeUnit.SECONDS))
-            assertNull(invokes.poll(1, TimeUnit.SECONDS))
+            assertNotNull(invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+            assertNull(invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS))
         }
     }
 
@@ -46,9 +48,9 @@ internal class EventReducerTest {
                 }
             }
 
-            assertNotNull(invokes.poll(1, TimeUnit.SECONDS))
-            invokes.poll(1, TimeUnit.SECONDS)
-            assertNull(invokes.poll(1, TimeUnit.SECONDS))
+            assertNotNull(invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+            invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            assertNull(invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS))
 
             executor.shutdown()
         }
@@ -64,10 +66,10 @@ internal class EventReducerTest {
         }).use { reducer ->
             reducer.start()
             reducer.handleEvent(Any())
-            assertNotNull(invokes.poll(1, TimeUnit.SECONDS))
+            assertNotNull(invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS))
             reducer.handleEvent(Any())
             holdHandlerInvocationLock.unlock()
-            assertNotNull(invokes.poll(1, TimeUnit.SECONDS))
+            assertNotNull(invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS))
         }
     }
 
@@ -85,9 +87,9 @@ internal class EventReducerTest {
         )
         eventReducer.start()
         eventReducer.handleEvent(Any())
-        assertNotNull(invokes.poll(1, TimeUnit.SECONDS))
+        assertNotNull(invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS))
         eventReducer.close()
-        assertNull(invokes.poll(1, TimeUnit.SECONDS))
+        assertNull(invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS))
     }
 
     @Test
@@ -108,9 +110,9 @@ internal class EventReducerTest {
             val expectedEventSum = events.sum()
             var actualEventSum = 0
             while (actualEventSum < expectedEventSum) {
-                actualEventSum += invokes.poll(1, TimeUnit.SECONDS)!!
+                actualEventSum += invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS)!!
             }
-            assertNull(invokes.poll(1, TimeUnit.SECONDS))
+            assertNull(invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS))
             assertEquals(expectedEventSum, actualEventSum)
         }
     }
@@ -134,9 +136,9 @@ internal class EventReducerTest {
 
             val receivedEvents = mutableListOf<Int>()
             while (receivedEvents.size < events.size) {
-                receivedEvents.addAll(invokes.poll(1, TimeUnit.SECONDS)!!)
+                receivedEvents.addAll(invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS)!!)
             }
-            assertNull(invokes.poll(1, TimeUnit.SECONDS))
+            assertNull(invokes.poll(INVOCATION_TIMEOUT_MS, TimeUnit.MILLISECONDS))
             assertEquals(events.toMutableList(), receivedEvents)
         }
     }
