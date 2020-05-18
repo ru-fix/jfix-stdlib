@@ -38,8 +38,8 @@ private const val AWAIT_TERMINATION_PERIOD_MS = 60_000L
  *      Thread.sleep(3_000) //block thread to see what will be send to console
  *  }
  * ```
- * It will produce something like that: `1 382 13 15 17 27 45`.
- * Given handler was invoked about 7 times instead of 500, and all 500 numbers reached by [handler]
+ * It will produce something like this: `1 382 13 15 17 27 45`.
+ * Given [handler] was invoked about 7 times instead of 500, and all 500 numbers reached by [handler]
  * */
 class EventReducer<ReceivingEventT, ReducedEventT>(
         profiler: Profiler,
@@ -78,7 +78,7 @@ class EventReducer<ReceivingEventT, ReducedEventT>(
 
     /**
      * Launches sending accumulated events to [handler].
-     * All events passed through [handleEvent] function before this function will invoked will be accumulated.
+     * Until this function is called, all received events will be accumulated
      * */
     fun start() {
         eventReceivingExecutor.submit(Runnable {
