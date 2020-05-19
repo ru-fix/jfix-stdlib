@@ -87,7 +87,8 @@ public class PendingFutureLimiterTest {
         Executors.newSingleThreadScheduledExecutor().schedule(() -> {
             try {
                 limiter.enqueueBlocking(createTask());
-            } catch (InterruptedException ignore) {}
+            } catch (InterruptedException ignore) {
+            }
         }, executionTimeLimit + 10, TimeUnit.MILLISECONDS);
 
         // And having blockinqEnqueue being called after executionTimeLimit - the queue will be cleaned and the only future will be in it
@@ -97,7 +98,7 @@ public class PendingFutureLimiterTest {
 
     @Test
     public void waitAll_should_wait_till_futures_completed() throws Exception {
-        long timeToCheckWait =  TimeUnit.SECONDS.toMillis(20);
+        long timeToCheckWait = TimeUnit.SECONDS.toMillis(20);
 
         PendingFutureLimiter limiter = new LimiterBuilder()
                 .executionTimeLimit(0)
@@ -273,22 +274,21 @@ public class PendingFutureLimiterTest {
         long taskDurationMs = 1_000;
         Duration assertingTaskTimeout = Duration.ofMillis(taskDurationMs * 2);
 
-        limiter.enqueueBlocking(CompletableFuture.runAsync(() -> {
-            try {
-                Thread.sleep(taskDurationMs);
-            } catch (InterruptedException ignored) {
-            }
-        }));
+        limiter.enqueueBlocking(CompletableFuture.runAsync(notTooLongRunningTask(taskDurationMs)));
         assertTimeoutPreemptively(assertingTaskTimeout, (Executable) limiter::waitAll);
 
-        limiter.enqueueBlocking(CompletableFuture.runAsync(() -> {
-            try {
-                Thread.sleep(taskDurationMs);
-            } catch (InterruptedException ignored) {
-            }
-        }));
+        limiter.enqueueBlocking(CompletableFuture.runAsync(notTooLongRunningTask(taskDurationMs)));
         long largeTimeout = TimeUnit.MINUTES.toMillis(5);
         assertTimeoutPreemptively(assertingTaskTimeout, () -> limiter.waitAll(largeTimeout));
+    }
+
+    private Runnable notTooLongRunningTask(long duration) {
+        return () -> {
+            try {
+                Thread.sleep(duration);
+            } catch (InterruptedException ignored) {
+            }
+        };
     }
 
     private class LimiterBuilder {
@@ -297,7 +297,8 @@ public class PendingFutureLimiterTest {
         private int tasksToEnqueue = 0;
         private int maxPendingCount = 3;
 
-        LimiterBuilder() {}
+        LimiterBuilder() {
+        }
 
         PendingFutureLimiter build() throws Exception {
             PendingFutureLimiter res = new PendingFutureLimiter(maxPendingCount, executionTimeLimit);
