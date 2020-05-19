@@ -2,9 +2,11 @@ package ru.fix.stdlib.concurrency.futures;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -263,6 +265,30 @@ public class PendingFutureLimiterTest {
 
         assertEquals(1, globalCounter.get());
         assertEquals(0, limiter.getPendingCount());
+    }
+
+    @Test
+    public void waitAll_releases_thread_after_last_future_is_completed() throws Exception {
+        PendingFutureLimiter limiter = new PendingFutureLimiter(3, TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES));
+        long taskDurationMs = 1_000;
+        Duration assertingTaskTimeout = Duration.ofMillis(taskDurationMs * 2);
+
+        limiter.enqueueBlocking(CompletableFuture.runAsync(() -> {
+            try {
+                Thread.sleep(taskDurationMs);
+            } catch (InterruptedException ignored) {
+            }
+        }));
+        assertTimeoutPreemptively(assertingTaskTimeout, (Executable) limiter::waitAll);
+
+        limiter.enqueueBlocking(CompletableFuture.runAsync(() -> {
+            try {
+                Thread.sleep(taskDurationMs);
+            } catch (InterruptedException ignored) {
+            }
+        }));
+        long largeTimeout = TimeUnit.MINUTES.toMillis(5);
+        assertTimeoutPreemptively(assertingTaskTimeout, () -> limiter.waitAll(largeTimeout));
     }
 
     private class LimiterBuilder {
