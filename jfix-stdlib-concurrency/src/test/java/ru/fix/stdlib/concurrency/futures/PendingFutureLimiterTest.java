@@ -288,7 +288,7 @@ public class PendingFutureLimiterTest {
             }
         }));
         long largeTimeout = TimeUnit.MINUTES.toMillis(5);
-        assertTimeoutPreemptively(assertingTaskTimeout, (Executable) () -> limiter.waitAll(largeTimeout));
+        assertTimeoutPreemptively(assertingTaskTimeout, () -> limiter.waitAll(largeTimeout));
     }
 
     private class LimiterBuilder {
@@ -297,8 +297,7 @@ public class PendingFutureLimiterTest {
         private int tasksToEnqueue = 0;
         private int maxPendingCount = 3;
 
-        LimiterBuilder() {
-        }
+        LimiterBuilder() {}
 
         PendingFutureLimiter build() throws Exception {
             PendingFutureLimiter res = new PendingFutureLimiter(maxPendingCount, executionTimeLimit);
