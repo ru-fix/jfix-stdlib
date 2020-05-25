@@ -1,7 +1,3 @@
-import me.champeau.gradle.JMHPluginExtension
-import org.gradle.kotlin.dsl.*
-
-
 plugins {
     java
     kotlin("jvm")
@@ -19,19 +15,19 @@ jmh{
 
 dependencies {
 
-    compile(project(":jfix-stdlib-id-generator"))
+    implementation(project(":jfix-stdlib-id-generator"))
 
     /**
      * Runtime
      */
-    compile(Libs.slf4j_api)
-    compile(Libs.kotlin_jdk8)
-    compile(Libs.kotlin_stdlib)
-    compile(Libs.kotlin_reflect)
-    compile(Libs.slf4j_simple)
-    compile(Libs.jmh)
-    compile(Libs.jmh_generator_ann)
-    compile(Libs.jmh_generator_bytecode)
+    implementation(Libs.slf4j_api)
+    implementation(Libs.kotlin_jdk8)
+    implementation(Libs.kotlin_stdlib)
+    implementation(Libs.kotlin_reflect)
+    implementation(Libs.slf4j_simple)
+    implementation(Libs.jmh)
+    implementation(Libs.jmh_generator_ann)
+    implementation(Libs.jmh_generator_bytecode)
 }
 
 
