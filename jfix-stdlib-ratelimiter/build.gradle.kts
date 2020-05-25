@@ -21,5 +21,5 @@ dependencies {
     testRuntimeOnly(Libs.junit_engine)
 
     testRuntimeOnly(Libs.slf4j_simple)
-    testCompile(Libs.kotlin_logging)
+    testImplementation(Libs.kotlin_logging)
 }
