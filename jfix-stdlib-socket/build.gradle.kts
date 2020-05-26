@@ -4,7 +4,7 @@ plugins {
 }
 
 dependencies {
-    implementation(Libs.slf4j_api)
+    api(Libs.slf4j_api)
 
     testImplementation(Libs.junit_api)
     testRuntimeOnly(Libs.junit_engine)
