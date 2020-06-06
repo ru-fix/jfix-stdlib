@@ -104,9 +104,9 @@ public class ReferenceCleaner {
                             }
                         }
                     } catch (InterruptedException thr) {
-                        //on interruption return
+                        log.debug("ReferenceCleaner thread interrupted.", thr);
                         return;
-                    } catch (Throwable thr) {
+                    } catch (Exception thr) {
                         log.error("ReferenceCleaner cleaning thread failed", thr);
                     }
                 }
