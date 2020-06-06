@@ -6,6 +6,7 @@ import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.dynamic.property.api.PropertySubscription;
 
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -127,9 +128,10 @@ public class ReschedulableScheduler implements AutoCloseable {
 
         private final Logger log;
 
-        private Schedule previousSchedule;
+        private ScheduleSettingsSnapshot prevScheduleSettingsSnapshot;
         private final DynamicProperty<Schedule> schedule;
         private PropertySubscription<Schedule> scheduleSubscription;
+        private PropertySubscription<Long> initialDelaySubscription;
         private final DynamicProperty<Long> startDelay;
 
         private ScheduledFuture<?> scheduledFuture;
@@ -234,30 +236,37 @@ public class ReschedulableScheduler implements AutoCloseable {
                         scheduledFuture, System.identityHashCode(scheduledFuture));
                 taskIsRunning.compareAndSet(true, false);
 
-                checkPreviousScheduleAndRestartTask(schedule.get());
+                checkPreviousScheduleAndRestartTask(new ScheduleSettingsSnapshot(schedule.get(), startDelay.get()));
             }
         }
 
-        private synchronized void checkPreviousScheduleAndRestartTask(Schedule schedule) {
-            if (scheduledFuture != null && scheduledFuture.isCancelled()) {
-                return;
-            }
-            if (previousSchedule != null && previousSchedule.equals(schedule)) {
+        private synchronized void checkPreviousScheduleAndRestartTask(ScheduleSettingsSnapshot scheduleSettingsSnapshot) {
+            ScheduledFuture<?> curScheduledFuture = scheduledFuture;
+            if (curScheduledFuture != null && curScheduledFuture.isCancelled()) {
                 return;
             }
 
-            previousSchedule = schedule;
+            ScheduleSettingsSnapshot settingsSnapshot = prevScheduleSettingsSnapshot;
+            if (settingsSnapshot != null && settingsSnapshot.equals(scheduleSettingsSnapshot)) {
+                return;
+            }
 
-            if (scheduledFuture != null) {
+            this.prevScheduleSettingsSnapshot = scheduleSettingsSnapshot;
+
+            if (curScheduledFuture != null) {
                 log.trace("checkPreviousScheduleAndRestartTask cancelling  scheduledFuture {} with hash={}",
-                        scheduledFuture, System.identityHashCode(scheduledFuture));
-                this.scheduledFuture.cancel(false);
+                        curScheduledFuture, System.identityHashCode(curScheduledFuture));
+                curScheduledFuture.cancel(false);
             }
 
-            this.scheduledFuture = schedule(this, schedule, this.startDelay.get());
+            this.scheduledFuture = schedule(
+                    this,
+                    scheduleSettingsSnapshot.schedule,
+                    scheduleSettingsSnapshot.startDelay
+            );
 
             log.trace("checkPreviousScheduleAndRestartTask new scheduledFuture {} with hash={} is scheduled",
-                    scheduledFuture, System.identityHashCode(scheduledFuture));
+                    curScheduledFuture, System.identityHashCode(curScheduledFuture));
 
         }
 
@@ -265,7 +274,15 @@ public class ReschedulableScheduler implements AutoCloseable {
 
             this.scheduleSubscription = this.schedule
                     .createSubscription()
-                    .setAndCallListener((oldVal, newVal) -> this.checkPreviousScheduleAndRestartTask(newVal));
+                    .setAndCallListener((oldVal, newVal) ->
+                            checkPreviousScheduleAndRestartTask(new ScheduleSettingsSnapshot(newVal, startDelay.get()))
+                    );
+
+            this.initialDelaySubscription = startDelay
+                    .createSubscription()
+                    .setAndCallListener((oldValue, newValue) ->
+                            checkPreviousScheduleAndRestartTask(new ScheduleSettingsSnapshot(schedule.get(), newValue))
+                    );
 
             log.trace("scheduledFuture={} with hash={} is launched",
                     scheduledFuture, System.identityHashCode(scheduledFuture));
@@ -300,6 +317,7 @@ public class ReschedulableScheduler implements AutoCloseable {
             log.trace("cancelling scheduledFuture {} with hash={}",
                     scheduledFuture, System.identityHashCode(scheduledFuture));
             scheduleSubscription.close();
+            initialDelaySubscription.close();
             scheduledFuture.cancel(mayInterruptIfRunning);
             cancelHandler.accept(this);
         }
@@ -392,5 +410,31 @@ public class ReschedulableScheduler implements AutoCloseable {
         shutdown();
     }
 
+    private static class ScheduleSettingsSnapshot {
 
+        final Schedule schedule;
+        final long startDelay;
+
+        public ScheduleSettingsSnapshot(
+                Schedule schedule,
+                long startDelay
+        ) {
+            this.schedule = schedule;
+            this.startDelay = startDelay;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ScheduleSettingsSnapshot that = (ScheduleSettingsSnapshot) o;
+            return startDelay == that.startDelay &&
+                    Objects.equals(schedule, that.schedule);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(schedule, startDelay);
+        }
+    }
 }

@@ -238,12 +238,10 @@ class ReschedulableSchedulerTest {
 
         assertFalse(latch.await(3, SECONDS))
 
-        // change schedule to force rescheduling
-        // and change initialDelay to check if it was applied
+        // change initialDelay to check if it was applied
         initialDelay.set(0L)
-        schedule.set(Schedule.withDelay(TimeUnit.HOURS.toMillis(12)))
 
-        assertTrue(latch.await(10, SECONDS))
+        assertTrue(latch.await(3, SECONDS))
 
         scheduler.shutdown()
         assertTrue(scheduler.awaitTermination(10, SECONDS))
