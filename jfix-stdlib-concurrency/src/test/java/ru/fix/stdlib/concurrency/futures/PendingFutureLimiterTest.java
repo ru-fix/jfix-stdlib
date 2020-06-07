@@ -304,7 +304,7 @@ public class PendingFutureLimiterTest {
             PendingFutureLimiter res = new PendingFutureLimiter(maxPendingCount, executionTimeLimit);
 
             if (pendingQueueSizeChangeCheckInteval != 0) {
-                res.setPendingQueueSizeChangeCheckInteval(pendingQueueSizeChangeCheckInteval);
+                res.setPendingQueueSizeChangeCheckInterval(pendingQueueSizeChangeCheckInteval);
             }
 
             if (tasksToEnqueue != 0) {
