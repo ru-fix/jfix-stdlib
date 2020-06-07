@@ -2,9 +2,11 @@ package ru.fix.stdlib.concurrency.futures;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -85,7 +87,8 @@ public class PendingFutureLimiterTest {
         Executors.newSingleThreadScheduledExecutor().schedule(() -> {
             try {
                 limiter.enqueueBlocking(createTask());
-            } catch (InterruptedException ignore) {}
+            } catch (InterruptedException ignore) {
+            }
         }, executionTimeLimit + 10, TimeUnit.MILLISECONDS);
 
         // And having blockinqEnqueue being called after executionTimeLimit - the queue will be cleaned and the only future will be in it
@@ -95,7 +98,7 @@ public class PendingFutureLimiterTest {
 
     @Test
     public void waitAll_should_wait_till_futures_completed() throws Exception {
-        long timeToCheckWait =  TimeUnit.SECONDS.toMillis(20);
+        long timeToCheckWait = TimeUnit.SECONDS.toMillis(20);
 
         PendingFutureLimiter limiter = new LimiterBuilder()
                 .executionTimeLimit(0)
@@ -265,13 +268,37 @@ public class PendingFutureLimiterTest {
         assertEquals(0, limiter.getPendingCount());
     }
 
+    @Test
+    public void waitAll_releases_thread_after_last_future_is_completed() throws Exception {
+        PendingFutureLimiter limiter = new PendingFutureLimiter(3, TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES));
+        long taskDurationMs = 1_000;
+        Duration assertingTaskTimeout = Duration.ofMillis(taskDurationMs * 2);
+
+        limiter.enqueueBlocking(CompletableFuture.runAsync(notTooLongRunningTask(taskDurationMs)));
+        assertTimeoutPreemptively(assertingTaskTimeout, (Executable) limiter::waitAll);
+
+        limiter.enqueueBlocking(CompletableFuture.runAsync(notTooLongRunningTask(taskDurationMs)));
+        long largeTimeout = TimeUnit.MINUTES.toMillis(5);
+        assertTimeoutPreemptively(assertingTaskTimeout, () -> limiter.waitAll(largeTimeout));
+    }
+
+    private Runnable notTooLongRunningTask(long duration) {
+        return () -> {
+            try {
+                Thread.sleep(duration);
+            } catch (InterruptedException ignored) {
+            }
+        };
+    }
+
     private class LimiterBuilder {
         private long executionTimeLimit = TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES);
         private long pendingQueueSizeChangeCheckInteval = 0;
         private int tasksToEnqueue = 0;
         private int maxPendingCount = 3;
 
-        LimiterBuilder() {}
+        LimiterBuilder() {
+        }
 
         PendingFutureLimiter build() throws Exception {
             PendingFutureLimiter res = new PendingFutureLimiter(maxPendingCount, executionTimeLimit);
