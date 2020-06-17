@@ -10,7 +10,7 @@ private const val DEFAULT_SHUTDOWN_CHECK_PERIOD_MS = 1_000L
 private const val AWAIT_TERMINATION_PERIOD_MS = 60_000L
 
 /**
- * EventReducer invokes given [handler] when [handleEvent] function was invoked with passing event through given [reduceFunction].
+ * ReducingEventAccumulator invokes given [handler] when [handleEvent] function was invoked with passing event through given [reduceFunction].
  * All events passed through [handleEvent] function before [handler] complete his invocation
  * will be accumulated in single butch of events by given [reduceFunction]. When [handler] completed his invocation,
  * it will immediately invoked again with that butch of events. And so on.
@@ -22,7 +22,7 @@ private const val AWAIT_TERMINATION_PERIOD_MS = 60_000L
  * Here is example:
  * ```
  *  val events = Array(500) { it } //numbers from 1 to 500
- *  EventReducer<Int, MutableList<Int>>(
+ *  ReducingEventAccumulator<Int, MutableList<Int>>(
  *      profiler = NoopProfiler(),
  *      reduceFunction = { accumulator, event ->
  *          accumulator?.apply { add(event!!) } ?: mutableListOf(event!!) //accumulate ints in list
@@ -41,16 +41,16 @@ private const val AWAIT_TERMINATION_PERIOD_MS = 60_000L
  * It will produce something like this: `1 382 13 15 17 27 45`.
  * Given [handler] was invoked about 7 times instead of 500, and all 500 numbers reached by [handler]
  * */
-class EventReducer<ReceivingEventT, ReducedEventT>(
+class ReducingEventAccumulator<ReceivingEventT, ReducedEventT>(
         profiler: Profiler,
         /**
          * rarely consistently invoked at the end of butch of events accumulated by [reduceFunction]
          * */
-        private val handler: (ReducedEventT?) -> Unit,
+        private val handler: (ReducedEventT) -> Unit,
         /**
          * frequently invoked for each new event to accumulate it in butch of events
          * */
-        private val reduceFunction: (accumulatedEvent: ReducedEventT?, newEvent: ReceivingEventT?) -> ReducedEventT?,
+        private val reduceFunction: (accumulatedEvent: ReducedEventT?, newEvent: ReceivingEventT) -> ReducedEventT,
         /**
          * how frequently thread checks if close method was invoked while waiting new event
          * */
@@ -65,15 +65,15 @@ class EventReducer<ReceivingEventT, ReducedEventT>(
             "event reducer", profiler
     )
 
-    private val awaitingEventQueue = ArrayBlockingQueue<ReducedEventT?>(1)
+    private val awaitingEventQueue = ArrayBlockingQueue<ReducedEventT>(1)
 
     /**
      * Invoke this function for each new event. Thread-safe.
      * */
-    fun handleEvent(event: ReceivingEventT? = null) = synchronized(awaitingEventQueue) {
-        var accumulatedEvent: ReducedEventT? = awaitingEventQueue.poll()
-        accumulatedEvent = reduceFunction.invoke(accumulatedEvent, event)
-        awaitingEventQueue.put(accumulatedEvent)
+    fun handleEvent(event: ReceivingEventT) = synchronized(awaitingEventQueue) {
+        val oldAccumulatedEvent: ReducedEventT? = awaitingEventQueue.poll()
+        val newAccumulatedEvent: ReducedEventT = reduceFunction.invoke(oldAccumulatedEvent, event)
+        awaitingEventQueue.put(newAccumulatedEvent)
     }
 
     /**
@@ -122,15 +122,15 @@ class EventReducer<ReceivingEventT, ReducedEventT>(
         private val log = KotlinLogging.logger {}
 
         @JvmStatic
-        fun <EventT> lastEventWinReducer(
+        fun <EventT> lastEventWinAccumulator(
                 profiler: Profiler,
-                handler: (EventT?) -> Unit,
+                handler: (EventT) -> Unit,
                 shutdownCheckPeriodMs: Long = DEFAULT_SHUTDOWN_CHECK_PERIOD_MS,
                 awaitTerminationPeriodMs: Long = AWAIT_TERMINATION_PERIOD_MS
-        ) = EventReducer(
+        ) = ReducingEventAccumulator(
                 profiler = profiler,
                 handler = handler,
-                reduceFunction = { _: EventT?, event: EventT? -> event },
+                reduceFunction = { _: EventT?, event: EventT -> event },
                 shutdownCheckPeriodMs = shutdownCheckPeriodMs,
                 awaitTerminationPeriodMs = awaitTerminationPeriodMs
         )
