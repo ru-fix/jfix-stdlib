@@ -1,138 +1,141 @@
 package ru.fix.stdlib.concurrency.events
 
-import mu.KotlinLogging
-import ru.fix.aggregating.profiler.Profiler
-import ru.fix.stdlib.concurrency.threads.NamedExecutors
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
-private const val DEFAULT_SHUTDOWN_CHECK_PERIOD_MS = 1_000L
-private const val AWAIT_TERMINATION_PERIOD_MS = 60_000L
+private const val DEFAULT_EXTRACT_TIMEOUT_MS = 1_000L
 
 /**
- * ReducingEventAccumulator invokes given [handler] when [handleEvent] function was invoked with passing event through given [reduceFunction].
- * All events passed through [handleEvent] function before [handler] complete his invocation
- * will be accumulated in single butch of events by given [reduceFunction]. When [handler] completed his invocation,
- * it will immediately invoked again with that butch of events. And so on.
+ * All events passed through [publishEvent] function before [extractAccumulatedValueOrNull] invoked
+ * will be accumulated in single butch of events by given [reduceFunction].
+ * When [extractAccumulatedValueOrNull] invoked, it will receive single butch of events,
+ * and new butch will be started by next [publishEvent] invocation.
  *
- * Therefore if [handleEvent] function was invoked 100 times with breaks in 1 millisecond,
- * and [handler]'s work takes 70 milliseconds,
- * then [handler] wasn't invoked 100 times, but 3 times, consistently.
+ * Therefore, if [ReceivingEventT] occurred 500 times with breaks in 1 millisecond,
+ * and the handler calling the function "extractAccumulatedValueOrNull" spends 100 milliseconds to process one event,
+ * it will not process 500 [ReceivingEventT], but 6-7 [AccumulatedEventT]
  *
  * Here is example:
  * ```
- *  val events = Array(500) { it } //numbers from 1 to 500
- *  ReducingEventAccumulator<Int, MutableList<Int>>(
- *      profiler = NoopProfiler(),
- *      reduceFunction = { accumulator, event ->
- *          accumulator?.apply { add(event!!) } ?: mutableListOf(event!!) //accumulate ints in list
- *      },
- *      handler = {
- *          println(it!!.size) //print received list size
+ * val events = Array(500) { it } //numbers from 1 to 500
+ * val accumulator = ReducingEventAccumulator<Int, MutableList<Int>>(
+ * reduceFunction = { accumulator, event ->
+ *      accumulator?.apply { add(event) } ?: mutableListOf(event) //accumulate ints in list
+ * })
+ * val consumer = Executors.newSingleThreadExecutor()
+ * consumer.execute {
+ *      accumulator.receiveReducedEventsUntilClosed {
+ *          Thread.sleep(100) //simulate slow event consuming
+ *          println(it.size) //print received list size
  *      }
- *  ).use {
- *      it.start()
- *      for (event in events) {
- *          it.handleEvent(event) //send 500 events
- *      }
- *      Thread.sleep(3_000) //block thread to see what will be send to console
- *  }
+ * }
+ * for(event in events) {
+ *      Thread.sleep(1) //sending event every 1 ms
+ *      accumulator.publishEvent(event)
+ * }
+ * Thread.sleep(3_000) //block thread to see what will be send to console
+ * accumulator.close()
+ * consumer.shutdown()
  * ```
- * It will produce something like this: `1 382 13 15 17 27 45`.
- * Given [handler] was invoked about 7 times instead of 500, and all 500 numbers reached by [handler]
+ * It will produce something like this: `1 93 91 91 93 92 39`.
+ * The consumer received about 7 events instead of 500, and all 500 numbers was reached
  * */
-class ReducingEventAccumulator<ReceivingEventT, ReducedEventT>(
-        profiler: Profiler,
+class ReducingEventAccumulator<ReceivingEventT, AccumulatedEventT>(
         /**
-         * rarely consistently invoked at the end of butch of events accumulated by [reduceFunction]
+         * Frequently invoked for each new event to accumulate it in butch of events.
+         * AccumulatedEvent is going to be null at the start of new butch
          * */
-        private val handler: (ReducedEventT) -> Unit,
+        private val reduceFunction: (accumulatedEvent: AccumulatedEventT?, newEvent: ReceivingEventT) -> AccumulatedEventT,
         /**
-         * frequently invoked for each new event to accumulate it in butch of events
+         * Time to wait until [AccumulatedEventT] will appear for extracting
          * */
-        private val reduceFunction: (accumulatedEvent: ReducedEventT?, newEvent: ReceivingEventT) -> ReducedEventT,
-        /**
-         * how frequently thread checks if close method was invoked while waiting new event
-         * */
-        private val shutdownCheckPeriodMs: Long = DEFAULT_SHUTDOWN_CHECK_PERIOD_MS,
-        /**
-         * time to wait termination of [handler] invocation or checking if close method was invoked.
-         * should be greater than [shutdownCheckPeriodMs]
-         * */
-        private val awaitTerminationPeriodMs: Long = AWAIT_TERMINATION_PERIOD_MS
+        private val extractTimeoutMs: Long = DEFAULT_EXTRACT_TIMEOUT_MS
 ) : AutoCloseable {
-    private val eventReceivingExecutor = NamedExecutors.newSingleThreadPool(
-            "event reducer", profiler
-    )
 
-    private val awaitingEventQueue = ArrayBlockingQueue<ReducedEventT>(1)
+    private val isClosed = AtomicBoolean(false)
+
+    private val awaitingEventQueue = ArrayBlockingQueue<AccumulatedEventT>(1)
+
+    private val reducingEventsLock = ReentrantLock()
 
     /**
      * Invoke this function for each new event. Thread-safe.
      * */
-    fun handleEvent(event: ReceivingEventT) = synchronized(awaitingEventQueue) {
-        val oldAccumulatedEvent: ReducedEventT? = awaitingEventQueue.poll()
-        val newAccumulatedEvent: ReducedEventT = reduceFunction.invoke(oldAccumulatedEvent, event)
-        awaitingEventQueue.put(newAccumulatedEvent)
+    fun publishEvent(event: ReceivingEventT) {
+        if (!isClosed.get()) {
+            reducingEventsLock.withLock {
+                val oldAccumulatedEvent: AccumulatedEventT? = awaitingEventQueue.poll()
+                val newAccumulatedEvent: AccumulatedEventT = reduceFunction.invoke(oldAccumulatedEvent, event)
+                awaitingEventQueue.put(newAccumulatedEvent)
+            }
+        }
     }
 
     /**
-     * Launches sending accumulated events to [handler].
-     * Until this function is called, all received events will be accumulated
+     * Invoke this function when you ready to proceed next [AccumulatedEventT]. Thread-safe.
+     * Waits given [extractTimeoutMs] for [publishEvent] invocation
+     * if none [ReceivingEventT] was published since last extraction.
+     *
+     * @return [AccumulatedEventT] if at least one [ReceivingEventT] was passed through [publishEvent] function
+     * since last extraction or during [extractTimeoutMs] after this function invocation, else null
      * */
-    fun start() {
-        eventReceivingExecutor.execute {
-            while (true) {
-                val event = awaitEventOrShutdown()
-                if (event != null) {
-                    handler.invoke(event)
-                }
-                if (eventReceivingExecutor.isShutdown) {
-                    return@execute
-                } //else unexpected exception, it's already logged
-            }
-        }
-    }
+    fun extractAccumulatedValueOrNull(): AccumulatedEventT? =
+            awaitingEventQueue.poll(extractTimeoutMs, TimeUnit.MILLISECONDS)
 
-    private fun awaitEventOrShutdown(): ReducedEventT? {
-        try {
-            var receivedEvent: ReducedEventT? = null
-            while (receivedEvent == null) {
-                receivedEvent = awaitingEventQueue.poll(shutdownCheckPeriodMs, TimeUnit.MILLISECONDS)
-                if (eventReceivingExecutor.isShutdown) {
-                    return null
-                }
-            }
-            return receivedEvent
-        } catch (e: Exception) {
-            log.error("waiting event was interrupted", e)
-        }
-        return null
-    }
+    override fun close() = isClosed.set(true)
 
-    override fun close() {
-        eventReceivingExecutor.shutdown()
-        if (!eventReceivingExecutor.awaitTermination(awaitTerminationPeriodMs, TimeUnit.MILLISECONDS)) {
-            log.warn("Failed to wait eventReceivingExecutor termination")
-            eventReceivingExecutor.shutdownNow()
+    /**
+     * @return true if [close] was invoked
+     * */
+    fun isClosed() = isClosed.get()
+
+    /**
+     * @return true if [close] was invoked and last [ReceivingEventT] received before closing
+     * was accumulated in [AccumulatedEventT] and extracted by [extractAccumulatedValueOrNull] function
+     * */
+    fun isClosedAndEmpty() = isClosed() && !reducingEventsLock.isLocked && awaitingEventQueue.isEmpty()
+
+    /**
+     * Use it if you want to proceed all events, passed through [publishEvent] function before [close] invocation,
+     * and you don't care about events, which not extracted by [extractAccumulatedValueOrNull] function at closing moment
+     * @see [isClosed]
+     * @see [receiveReducedEvents]
+     * */
+    fun receiveReducedEventsUntilClosed(receiver: (AccumulatedEventT) -> Unit) =
+            receiveReducedEvents(this::isClosed, receiver)
+
+    /**
+     * Use it if you want to proceed all events, passed through [publishEvent] function before [close] invocation,
+     * including events, which not extracted by [extractAccumulatedValueOrNull] function at closing moment
+     * @see [isClosedAndEmpty]
+     * @see [receiveReducedEvents]
+     * */
+    fun receiveReducedEventsUntilClosedAndEmpty(receiver: (AccumulatedEventT) -> Unit) =
+            receiveReducedEvents(this::isClosedAndEmpty, receiver)
+
+    /**
+     * Uses current thread. Extracts accumulated events by [extractAccumulatedValueOrNull] function
+     * and pass non-null of them in given [receiver], until [stopCondition] became true
+     * */
+    fun receiveReducedEvents(stopCondition: () -> Boolean, receiver: (AccumulatedEventT) -> Unit) {
+        while (!stopCondition.invoke()) {
+            val eventOrNull = extractAccumulatedValueOrNull()
+            if (eventOrNull != null) {
+                receiver.invoke(eventOrNull)
+            }
         }
     }
 
     companion object {
-        private val log = KotlinLogging.logger {}
-
         @JvmStatic
         fun <EventT> lastEventWinAccumulator(
-                profiler: Profiler,
-                handler: (EventT) -> Unit,
-                shutdownCheckPeriodMs: Long = DEFAULT_SHUTDOWN_CHECK_PERIOD_MS,
-                awaitTerminationPeriodMs: Long = AWAIT_TERMINATION_PERIOD_MS
+                extractTimeoutMs: Long = DEFAULT_EXTRACT_TIMEOUT_MS
         ) = ReducingEventAccumulator(
-                profiler = profiler,
-                handler = handler,
                 reduceFunction = { _: EventT?, event: EventT -> event },
-                shutdownCheckPeriodMs = shutdownCheckPeriodMs,
-                awaitTerminationPeriodMs = awaitTerminationPeriodMs
+                extractTimeoutMs = extractTimeoutMs
         )
     }
 }
