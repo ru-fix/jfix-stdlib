@@ -2,7 +2,6 @@ package ru.fix.stdlib.concurrency.events
 
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -55,22 +54,20 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatedEventT>(
         private val extractTimeoutMs: Long = DEFAULT_EXTRACT_TIMEOUT_MS
 ) : AutoCloseable {
 
-    private val isClosed = AtomicBoolean(false)
+    private var closed = false
 
     private val awaitingEventQueue = ArrayBlockingQueue<AccumulatedEventT>(1)
 
-    private val reducingEventsLock = ReentrantLock()
+    private val publishingLock = ReentrantLock()
 
     /**
      * Invoke this function for each new event. Thread-safe.
      * */
-    fun publishEvent(event: ReceivingEventT) {
-        if (!isClosed.get()) {
-            reducingEventsLock.withLock {
-                val oldAccumulatedEvent: AccumulatedEventT? = awaitingEventQueue.poll()
-                val newAccumulatedEvent: AccumulatedEventT = reduceFunction.invoke(oldAccumulatedEvent, event)
-                awaitingEventQueue.put(newAccumulatedEvent)
-            }
+    fun publishEvent(event: ReceivingEventT) = publishingLock.withLock {
+        if (!closed) {
+            val oldAccumulatedEvent: AccumulatedEventT? = awaitingEventQueue.poll()
+            val newAccumulatedEvent: AccumulatedEventT = reduceFunction.invoke(oldAccumulatedEvent, event)
+            awaitingEventQueue.put(newAccumulatedEvent)
         }
     }
 
@@ -85,18 +82,24 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatedEventT>(
     fun extractAccumulatedValueOrNull(): AccumulatedEventT? =
             awaitingEventQueue.poll(extractTimeoutMs, TimeUnit.MILLISECONDS)
 
-    override fun close() = isClosed.set(true)
+    override fun close() = publishingLock.withLock {
+        closed = true
+    }
 
     /**
      * @return true if [close] was invoked
      * */
-    fun isClosed() = isClosed.get()
+    fun isClosed() = publishingLock.withLock {
+        return@withLock closed
+    }
 
     /**
      * @return true if [close] was invoked and last [ReceivingEventT] received before closing
      * was accumulated in [AccumulatedEventT] and extracted by [extractAccumulatedValueOrNull] function
      * */
-    fun isClosedAndEmpty() = isClosed() && !reducingEventsLock.isLocked && awaitingEventQueue.isEmpty()
+    fun isClosedAndEmpty() = publishingLock.withLock {
+        return@withLock closed && awaitingEventQueue.isEmpty()
+    }
 
     /**
      * Use it if you want to proceed all events, passed through [publishEvent] function before [close] invocation,
