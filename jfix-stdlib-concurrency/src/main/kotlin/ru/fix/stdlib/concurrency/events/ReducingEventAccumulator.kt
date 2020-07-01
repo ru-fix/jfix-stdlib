@@ -47,11 +47,7 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatedEventT>(
          * Frequently invoked for each new event to accumulate it in butch of events.
          * AccumulatedEvent is going to be null at the start of new butch
          * */
-        private val reduceFunction: (accumulatedEvent: AccumulatedEventT?, newEvent: ReceivingEventT) -> AccumulatedEventT,
-        /**
-         * Time to wait until [AccumulatedEventT] will appear for extracting
-         * */
-        private val extractTimeoutMs: Long = DEFAULT_EXTRACT_TIMEOUT_MS
+        private val reduceFunction: (accumulatedEvent: AccumulatedEventT?, newEvent: ReceivingEventT) -> AccumulatedEventT
 ) : AutoCloseable {
 
     private var closed = false
@@ -79,7 +75,7 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatedEventT>(
      * @return [AccumulatedEventT] if at least one [ReceivingEventT] was passed through [publishEvent] function
      * since last extraction or during [extractTimeoutMs] after this function invocation, else null
      * */
-    fun extractAccumulatedValueOrNull(): AccumulatedEventT? =
+    fun extractAccumulatedValueOrNull(extractTimeoutMs: Long = DEFAULT_EXTRACT_TIMEOUT_MS): AccumulatedEventT? =
             awaitingEventQueue.poll(extractTimeoutMs, TimeUnit.MILLISECONDS)
 
     override fun close() = publishingLock.withLock {
@@ -134,11 +130,7 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatedEventT>(
 
     companion object {
         @JvmStatic
-        fun <EventT> lastEventWinAccumulator(
-                extractTimeoutMs: Long = DEFAULT_EXTRACT_TIMEOUT_MS
-        ) = ReducingEventAccumulator(
-                reduceFunction = { _: EventT?, event: EventT -> event },
-                extractTimeoutMs = extractTimeoutMs
-        )
+        fun <EventT> lastEventWinAccumulator() =
+                ReducingEventAccumulator { _: EventT?, event: EventT -> event }
     }
 }
