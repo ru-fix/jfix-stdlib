@@ -9,9 +9,7 @@ internal class ReducingEventAccumulatorTest {
 
     @Test
     fun `WHEN publish single time THEN handler invoked one time`() {
-        val accumulator = ReducingEventAccumulator.lastEventWinAccumulator<Any>(
-                extractTimeoutMs = 100
-        )
+        val accumulator = ReducingEventAccumulator.lastEventWinAccumulator<Any>()
         assertNull(accumulator.extractAccumulatedValueOrNull())
         accumulator.publishEvent(Any())
         assertNotNull(accumulator.extractAccumulatedValueOrNull())
@@ -133,8 +131,7 @@ internal class ReducingEventAccumulatorTest {
     }
 
 
-    private fun defaultIntSumAccumulator() = ReducingEventAccumulator<Int, Int>(
-            reduceFunction = { accumulatedEvent, event -> event + (accumulatedEvent ?: 0) },
-            extractTimeoutMs = 500
-    )
+    private fun defaultIntSumAccumulator() =
+            ReducingEventAccumulator<Int, Int> { accumulatedEvent, event -> event + (accumulatedEvent ?: 0) }
+
 }
