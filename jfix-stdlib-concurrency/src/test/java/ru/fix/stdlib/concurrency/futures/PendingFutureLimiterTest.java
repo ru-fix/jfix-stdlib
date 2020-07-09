@@ -287,20 +287,19 @@ public class PendingFutureLimiterTest {
     public void enqueueBlocking_blocks_invoking_thread_when_limit_is_reached() throws Exception {
         PendingFutureLimiter limiter = new LimiterBuilder()
                 .executionTimeLimit(0)
-                .enqueueTasks(3)
-                .build();
-        AtomicBoolean ai = new AtomicBoolean(false);
+                .buildAndFulyEnqueue();
+        AtomicBoolean overflowedEnqueuePassed = new AtomicBoolean(false);
         // We'll try to enqueue after futures timeout is exceeded
         Executors.newSingleThreadScheduledExecutor().execute(() -> {
             try {
                 limiter.enqueueBlocking(createTask());
-                ai.set(true);
+                overflowedEnqueuePassed.set(true);
             } catch (InterruptedException ignore) {
             }
         });
-        assertFalse(ai.get());
+        assertFalse(overflowedEnqueuePassed.get());
         Thread.sleep(TimeUnit.SECONDS.toMillis(10));
-        assertFalse(ai.get());
+        assertFalse(overflowedEnqueuePassed.get());
     }
 
     private Runnable notTooLongRunningTask(long duration) {
@@ -319,6 +318,11 @@ public class PendingFutureLimiterTest {
         private int maxPendingCount = 3;
 
         LimiterBuilder() {
+        }
+
+        PendingFutureLimiter buildAndFulyEnqueue() throws Exception {
+            this.tasksToEnqueue = maxPendingCount;
+            return build();
         }
 
         PendingFutureLimiter build() throws Exception {
