@@ -300,6 +300,8 @@ public class PendingFutureLimiterTest {
         assertFalse(overflowedEnqueuePassed.get());
         Thread.sleep(TimeUnit.SECONDS.toMillis(10));
         assertFalse(overflowedEnqueuePassed.get());
+        unleashLatchAndCompleteAllTask();
+        await().atMost(10, TimeUnit.SECONDS).untilTrue(overflowedEnqueuePassed);
     }
 
     private Runnable notTooLongRunningTask(long duration) {
