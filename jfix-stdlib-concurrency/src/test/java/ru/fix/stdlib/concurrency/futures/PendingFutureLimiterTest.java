@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.awaitility.Awaitility.await;
@@ -280,6 +281,34 @@ public class PendingFutureLimiterTest {
         limiter.enqueueBlocking(CompletableFuture.runAsync(notTooLongRunningTask(taskDurationMs)));
         long largeTimeout = TimeUnit.MINUTES.toMillis(5);
         assertTimeoutPreemptively(assertingTaskTimeout, () -> limiter.waitAll(largeTimeout));
+    }
+
+    @Test
+    public void enqueueBlocking_blocks_invoking_thread_when_limit_is_reached() throws Exception {
+        PendingFutureLimiter limiter = new LimiterBuilder()
+                .executionTimeLimit(0)
+                .maxPendingCount(4)
+                .enqueueTasks(3)
+                .build();
+        CompletableFuture localLatch = new CompletableFuture();
+        limiter.enqueueBlocking(localLatch);
+
+        AtomicBoolean overflowedEnqueuePassed = new AtomicBoolean(false);
+        // We'll try to enqueue after futures timeout is exceeded
+        Executors.newSingleThreadScheduledExecutor().execute(() -> {
+            try {
+                limiter.enqueueBlocking(createTask());
+                overflowedEnqueuePassed.set(true);
+            } catch (InterruptedException ignore) {
+            }
+        });
+
+        assertFalse(overflowedEnqueuePassed.get());
+        Thread.sleep(TimeUnit.SECONDS.toMillis(10));
+        assertFalse(overflowedEnqueuePassed.get());
+
+        localLatch.complete(null);
+        await().atMost(10, TimeUnit.SECONDS).untilTrue(overflowedEnqueuePassed);
     }
 
     private Runnable notTooLongRunningTask(long duration) {

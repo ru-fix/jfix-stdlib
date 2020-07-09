@@ -210,14 +210,13 @@ public class PendingFutureLimiter {
     }
 
     private void awaitOpportunityToEnqueueAndPurge() throws InterruptedException {
-        while (counter.get() >= maxPendingCount && maxFutureExecuteTime > 0) {
+        while (counter.get() >= maxPendingCount) {
             synchronized (counter) {
-                if (counter.get() >= maxPendingCount && maxFutureExecuteTime > 0)
+                if (counter.get() >= maxPendingCount)
                     counter.wait(pendingQueueSizeChangeCheckInterval);
             }
             releaseTimeoutedIfPossible();
         }
-
     }
 
     public long getPendingCount() {
