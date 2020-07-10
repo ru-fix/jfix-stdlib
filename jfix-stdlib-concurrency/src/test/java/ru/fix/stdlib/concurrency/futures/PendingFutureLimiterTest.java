@@ -319,17 +319,17 @@ public class PendingFutureLimiterTest {
         CompletableFuture<String> normalResult = limiter.enqueueBlocking(source);
 
         assertFalse(source == normalResult);
-        source.complete("1");
-        assertEquals(normalResult.get(), "1");
+        String message = "OK";
+        source.complete(message);
+        assertEquals(normalResult.get(), message);
 
         source = new CompletableFuture<>();
         CompletableFuture<String> failedResult = limiter.enqueueBlocking(source);
 
-        Exception thrown = new Exception("I am failed");
+        Exception thrown = new Exception("I have failed");
         source.completeExceptionally(thrown);
         ExecutionException wrapped = assertThrows(ExecutionException.class, () -> failedResult.get());
         assertEquals(wrapped.getCause(), thrown);
-
     }
 
     @Test
