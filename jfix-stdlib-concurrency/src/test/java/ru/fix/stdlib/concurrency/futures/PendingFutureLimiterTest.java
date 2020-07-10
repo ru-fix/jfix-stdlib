@@ -7,9 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -309,6 +307,53 @@ public class PendingFutureLimiterTest {
 
         localLatch.complete(null);
         await().atMost(10, TimeUnit.SECONDS).untilTrue(overflowedEnqueuePassed);
+    }
+
+    @Test
+    public void enqueued_future_shouldnt_be_muted_and_result_of_enqueueing_should_be_same_with_source() throws Exception {
+        PendingFutureLimiter limiter = new LimiterBuilder()
+                .maxPendingCount(3)
+                .build();
+
+        CompletableFuture<String> source = new CompletableFuture<>();
+        CompletableFuture<String> normalResult = limiter.enqueueBlocking(source);
+
+        assertFalse(source == normalResult);
+        source.complete("1");
+        assertEquals(normalResult.get(), "1");
+
+        source = new CompletableFuture<>();
+        CompletableFuture<String> failedResult = limiter.enqueueBlocking(source);
+
+        Exception thrown = new Exception("I am failed");
+        source.completeExceptionally(thrown);
+        ExecutionException wrapped = assertThrows(ExecutionException.class, () -> failedResult.get());
+        assertEquals(wrapped.getCause(), thrown);
+
+    }
+
+    @Test
+    public void when_source_future_timeouted_result_should_throw_exception_but_source_still_may_complete_successfully() throws Exception {
+        long timeout = TimeUnit.SECONDS.toMillis(2);
+
+        PendingFutureLimiter limiter = new LimiterBuilder()
+                .maxPendingCount(1)
+                .executionTimeLimit(timeout)
+                .build();
+
+        CompletableFuture<String> source = new CompletableFuture<>();
+        CompletableFuture<String> result = limiter.enqueueBlocking(source);
+
+        limiter.enqueueBlocking(new CompletableFuture<>());
+        ExecutionException wrapped = assertThrows(ExecutionException.class, () -> result.get());
+        assertTrue(wrapped.getCause() instanceof TimeoutException);
+
+        CompletableFuture<String> onSource = source.thenApplyAsync(message -> message + "!");
+        String message = "OK";
+
+        source.complete(message);
+        assertEquals(source.get(), message);
+        assertEquals(onSource.get(), message + "!");
     }
 
     private Runnable notTooLongRunningTask(long duration) {

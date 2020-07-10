@@ -6,9 +6,7 @@ import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.dynamic.property.api.PropertySubscription;
 
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -187,12 +185,16 @@ public class PendingFutureLimiter {
             awaitOpportunityToEnqueueAndPurge();
         }
 
-        counter.incrementAndGet();
-        pendingFutures.put(future, System.currentTimeMillis());
-        future.handleAsync((any, exc) -> {
+        CompletableFuture<T> resultFuture = future.handleAsync((any, exc) -> {
             if (exc != null) {
                 log.error(exc.getMessage(), exc);
+                throw new CompletionException(exc);
+            } else {
+                return any;
             }
+        });
+
+        resultFuture.handleAsync((any, exc) -> {
             long value = counter.decrementAndGet();
             pendingFutures.remove(future);
 
@@ -206,7 +208,9 @@ public class PendingFutureLimiter {
             }
             return null;
         });
-        return future;
+        counter.incrementAndGet();
+        pendingFutures.put(resultFuture, System.currentTimeMillis());
+        return resultFuture;
     }
 
     private void awaitOpportunityToEnqueueAndPurge() throws InterruptedException {
@@ -286,7 +290,7 @@ public class PendingFutureLimiter {
                 + maxFutureExecuteTime + " milliseconds. Pending count: " + getPendingCount();
 
         Consumer<Map.Entry<CompletableFuture<?>, Long>> completeExceptionally =
-                entry -> entry.getKey().completeExceptionally(new Exception(errorMessage));
+                entry -> entry.getKey().completeExceptionally(new TimeoutException(errorMessage));
 
         Predicate<Map.Entry<CompletableFuture<?>, Long>> isTimeoutPredicate =
                 entry -> System.currentTimeMillis() - entry.getValue() > maxFutureExecuteTime;
