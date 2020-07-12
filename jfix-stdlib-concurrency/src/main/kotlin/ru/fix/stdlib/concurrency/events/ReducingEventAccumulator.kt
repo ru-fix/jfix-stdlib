@@ -1,5 +1,6 @@
 package ru.fix.stdlib.concurrency.events
 
+import ru.fix.dynamic.property.api.DynamicProperty
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
@@ -103,8 +104,11 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatedEventT>(
      * @see [isClosed]
      * @see [receiveReducedEvents]
      * */
-    fun receiveReducedEventsUntilClosed(receiver: (AccumulatedEventT) -> Unit) =
-            receiveReducedEvents(this::isClosed, receiver)
+    fun receiveReducedEventsUntilClosed(
+            extractTimeoutMsProperty: DynamicProperty<Long> = DynamicProperty.of(DEFAULT_EXTRACT_TIMEOUT_MS),
+            receiver: (AccumulatedEventT) -> Unit
+    ) =
+            receiveReducedEvents(extractTimeoutMsProperty, this::isClosed, receiver)
 
     /**
      * Use it if you want to proceed all events, passed through [publishEvent] function before [close] invocation,
@@ -112,16 +116,23 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatedEventT>(
      * @see [isClosedAndEmpty]
      * @see [receiveReducedEvents]
      * */
-    fun receiveReducedEventsUntilClosedAndEmpty(receiver: (AccumulatedEventT) -> Unit) =
-            receiveReducedEvents(this::isClosedAndEmpty, receiver)
+    fun receiveReducedEventsUntilClosedAndEmpty(
+            extractTimeoutMsProperty: DynamicProperty<Long> = DynamicProperty.of(DEFAULT_EXTRACT_TIMEOUT_MS),
+            receiver: (AccumulatedEventT) -> Unit
+    ) =
+            receiveReducedEvents(extractTimeoutMsProperty, this::isClosedAndEmpty, receiver)
 
     /**
      * Uses current thread. Extracts accumulated events by [extractAccumulatedValueOrNull] function
      * and pass non-null of them in given [receiver], until [stopCondition] became true
      * */
-    fun receiveReducedEvents(stopCondition: () -> Boolean, receiver: (AccumulatedEventT) -> Unit) {
+    fun receiveReducedEvents(
+            extractTimeoutMsProperty: DynamicProperty<Long> = DynamicProperty.of(DEFAULT_EXTRACT_TIMEOUT_MS),
+            stopCondition: () -> Boolean,
+            receiver: (AccumulatedEventT) -> Unit
+    ) {
         while (!stopCondition.invoke()) {
-            val eventOrNull = extractAccumulatedValueOrNull()
+            val eventOrNull = extractAccumulatedValueOrNull(extractTimeoutMsProperty.get())
             if (eventOrNull != null) {
                 receiver.invoke(eventOrNull)
             }
