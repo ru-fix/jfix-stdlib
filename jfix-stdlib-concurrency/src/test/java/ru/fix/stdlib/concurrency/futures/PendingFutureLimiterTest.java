@@ -10,10 +10,8 @@ import java.time.Duration;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.IntStream;
 
 import static org.awaitility.Awaitility.await;
-import static org.awaitility.Awaitility.with;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -489,18 +487,6 @@ public class PendingFutureLimiterTest {
             return this;
         }
 
-    }
-
-    public static class SessionStub {
-        private volatile boolean readable = true;
-
-        public boolean isReadable() {
-            return this.readable;
-        }
-
-        public void setReadable(boolean readable) {
-            this.readable = readable;
-        }
     }
 
     private void unleashLatchAndCompleteAllTask() {
