@@ -232,7 +232,7 @@ public class PendingFutureLimiterTest {
         assertEquals(limiter.getPendingCount(), 9);
         assertEquals(thresholdCallCounter.get(), 0);
 
-        CompletableFuture localLatch = new CompletableFuture();
+        CompletableFuture<String> localLatch = new CompletableFuture<>();
 
         limiter.enqueueUnlimited(localLatch.thenApplyAsync((s) -> s));
 
@@ -250,7 +250,7 @@ public class PendingFutureLimiterTest {
 
         await().atMost(1, TimeUnit.SECONDS).until(() -> limiter.getPendingCount() == 9);
 
-        CompletableFuture parallelEnqueueLatch = new CompletableFuture();
+        CompletableFuture<String> parallelEnqueueLatch = new CompletableFuture<>();
 
         for (int i = 0; i < 50; i++) {
             parallelEnqueueLatch.thenApplyAsync((s) -> {
@@ -289,7 +289,7 @@ public class PendingFutureLimiterTest {
             limiter.enqueueUnlimited(createTask());
         }
 
-        CompletableFuture singleFuture = new CompletableFuture();
+        CompletableFuture<String> singleFuture = new CompletableFuture<>();
         limiter.enqueueUnlimited(singleFuture);
 
         assertEquals(limiter.getPendingCount(), 8);
@@ -299,7 +299,7 @@ public class PendingFutureLimiterTest {
         await().atMost(1, TimeUnit.SECONDS).until(() -> lowLimitCallCounter.get() == 1);
 
 
-        CompletableFuture localLatch = new CompletableFuture();
+        CompletableFuture<String> localLatch = new CompletableFuture<>();
 
         for (int i = 0; i < 20; i++) {
             limiter.enqueueUnlimited(localLatch.thenApplyAsync((s) -> s));
@@ -358,7 +358,7 @@ public class PendingFutureLimiterTest {
                 .maxPendingCount(4)
                 .enqueueTasks(3)
                 .build();
-        CompletableFuture localLatch = new CompletableFuture();
+        CompletableFuture<String> localLatch = new CompletableFuture<>();
         limiter.enqueueBlocking(localLatch);
 
         AtomicBoolean overflowedEnqueuePassed = new AtomicBoolean(false);
@@ -388,7 +388,7 @@ public class PendingFutureLimiterTest {
         CompletableFuture<String> source = new CompletableFuture<>();
         CompletableFuture<String> result = limiter.enqueueBlocking(source);
 
-        assertFalse(source == result);
+        assertNotSame(source, result);
         String message = "OK";
         source.complete(message);
         assertEquals(result.get(), message);
@@ -405,7 +405,7 @@ public class PendingFutureLimiterTest {
 
         Exception thrown = new Exception("I have failed");
         source.completeExceptionally(thrown);
-        ExecutionException wrapped = assertThrows(ExecutionException.class, () -> result.get());
+        ExecutionException wrapped = assertThrows(ExecutionException.class, result::get);
         assertEquals(wrapped.getCause(), thrown);
     }
 
@@ -422,7 +422,7 @@ public class PendingFutureLimiterTest {
         CompletableFuture<String> result = limiter.enqueueBlocking(source);
 
         limiter.enqueueBlocking(new CompletableFuture<>());
-        ExecutionException wrapped = assertThrows(ExecutionException.class, () -> result.get());
+        ExecutionException wrapped = assertThrows(ExecutionException.class, result::get);
         assertTrue(wrapped.getCause() instanceof TimeoutException);
 
         CompletableFuture<String> onSource = source.thenApplyAsync(message -> message + "!");
