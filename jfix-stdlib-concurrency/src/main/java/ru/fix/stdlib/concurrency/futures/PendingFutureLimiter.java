@@ -10,6 +10,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 /**
  * Limit number of scheduled async operations.
@@ -177,7 +178,9 @@ public class PendingFutureLimiter {
      */
     protected <T> CompletableFuture<T> internalEnqueue(CompletableFuture<T> future,
                                                        boolean needToBlock) throws InterruptedException {
-        if (counter.get() == maxPendingCount && thresholdListener != null) {
+        long queueSize = counter.incrementAndGet();
+
+        if (queueSize == maxPendingCount && thresholdListener != null) {
             thresholdListener.onHiLimitReached();
         }
 
@@ -196,10 +199,10 @@ public class PendingFutureLimiter {
 
         resultFuture.handleAsync((any, exc) -> {
             long value = counter.decrementAndGet();
-            pendingFutures.remove(future);
+            pendingFutures.remove(resultFuture);
 
             if (value == 0 || value == getThreshold()) {
-                if (thresholdListener != null) {
+                if (value == getThreshold() && thresholdListener != null) {
                     thresholdListener.onLowLimitSubceed();
                 }
                 synchronized (counter) {
@@ -208,7 +211,6 @@ public class PendingFutureLimiter {
             }
             return null;
         });
-        counter.incrementAndGet();
         pendingFutures.put(resultFuture, System.currentTimeMillis());
         return resultFuture;
     }
@@ -286,20 +288,16 @@ public class PendingFutureLimiter {
             return;
         }
 
+        Predicate<Map.Entry<CompletableFuture<?>, Long>> isTimeoutPredicate =
+                entry -> System.currentTimeMillis() - entry.getValue() > maxFutureExecuteTime;
+
         String errorMessage = "Timeout exception. Completable future did not complete for at least "
                 + maxFutureExecuteTime + " milliseconds. Pending count: " + getPendingCount();
 
         Consumer<Map.Entry<CompletableFuture<?>, Long>> completeExceptionally =
                 entry -> entry.getKey().completeExceptionally(new TimeoutException(errorMessage));
 
-        Predicate<Map.Entry<CompletableFuture<?>, Long>> isTimeoutPredicate =
-                entry -> System.currentTimeMillis() - entry.getValue() > maxFutureExecuteTime;
-
         pendingFutures.entrySet().stream().filter(isTimeoutPredicate).forEach(completeExceptionally);
-
-        if (pendingFutures.entrySet().stream().anyMatch(isTimeoutPredicate)) {
-            log.error(errorMessage);
-        }
     }
 
 

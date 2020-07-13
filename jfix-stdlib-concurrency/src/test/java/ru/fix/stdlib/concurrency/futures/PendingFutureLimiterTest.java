@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 
 import static org.awaitility.Awaitility.await;
 import static org.awaitility.Awaitility.with;
@@ -180,12 +181,12 @@ public class PendingFutureLimiterTest {
 
     @Test
     public void waitAll_behaviour_with_executionTime_limited_limiter() throws Exception {
-        long timeToWait = TimeUnit.SECONDS.toMillis(20);
+        long timeToWait = TimeUnit.SECONDS.toMillis(6);
 
         // Create limiter with timeout
         PendingFutureLimiter limiter = new LimiterBuilder()
                 .executionTimeLimit(timeToWait * 2)
-                .setPendingQueueSizeChangeCheckInteval(TimeUnit.SECONDS.toMillis(5))
+                .setPendingQueueSizeChangeCheckInteval(TimeUnit.SECONDS.toMillis(2))
                 .maxPendingCount(3)
                 .enqueueTasks(3)
                 .build();
@@ -310,25 +311,32 @@ public class PendingFutureLimiterTest {
     }
 
     @Test
-    public void enqueued_future_shouldnt_be_muted_and_result_of_enqueueing_should_be_same_with_source() throws Exception {
+    public void enqueued_future_shouldnt_be_mutated_and_result_of_enqueueing_should_be_same_with_source() throws Exception {
         PendingFutureLimiter limiter = new LimiterBuilder()
                 .maxPendingCount(3)
                 .build();
 
         CompletableFuture<String> source = new CompletableFuture<>();
-        CompletableFuture<String> normalResult = limiter.enqueueBlocking(source);
+        CompletableFuture<String> result = limiter.enqueueBlocking(source);
 
-        assertFalse(source == normalResult);
+        assertFalse(source == result);
         String message = "OK";
         source.complete(message);
-        assertEquals(normalResult.get(), message);
+        assertEquals(result.get(), message);
+    }
 
-        source = new CompletableFuture<>();
-        CompletableFuture<String> failedResult = limiter.enqueueBlocking(source);
+    @Test
+    public void result_of_enqueueing_should_contain_enqueued_futures_exception() throws Exception {
+        PendingFutureLimiter limiter = new LimiterBuilder()
+                .maxPendingCount(3)
+                .build();
+
+        CompletableFuture<String> source = new CompletableFuture<>();
+        CompletableFuture<String> result = limiter.enqueueBlocking(source);
 
         Exception thrown = new Exception("I have failed");
         source.completeExceptionally(thrown);
-        ExecutionException wrapped = assertThrows(ExecutionException.class, () -> failedResult.get());
+        ExecutionException wrapped = assertThrows(ExecutionException.class, () -> result.get());
         assertEquals(wrapped.getCause(), thrown);
     }
 
