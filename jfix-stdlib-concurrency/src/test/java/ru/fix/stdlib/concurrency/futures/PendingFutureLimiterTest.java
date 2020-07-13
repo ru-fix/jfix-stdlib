@@ -212,36 +212,107 @@ public class PendingFutureLimiterTest {
     }
 
     @Test
-    public void enqueue_channelBlockReading_blockUnblock() throws Exception {
-        SessionStub sessionStub = new SessionStub();
-        PendingFutureLimiter limiter = new PendingFutureLimiter(3, TimeUnit.MINUTES.toMillis(FUTURE_LIMITER_TIMEOUT_MINUTES));
-        limiter.setThresholdListener(
-                new PendingFutureLimiter.ThresholdListener() {
-                    @Override
-                    public void onHiLimitReached() {
-                        sessionStub.setReadable(false);
-                    }
+    public void enqueueing_up_and_over_max_pending_count_should_invoke_ThresholdListener_onHiLimitReached_exactly_once() throws Exception {
+        PendingFutureLimiter limiter = new LimiterBuilder()
+                .maxPendingCount(10)
+                .build();
 
-                    @Override
-                    public void onLowLimitSubceed() {
-                        sessionStub.setReadable(true);
-                    }
-                });
-        for (int i = 0; i < 3; i++) {
+        AtomicInteger thresholdCallCounter = new AtomicInteger(0);
+
+        limiter.setThresholdListener(new PendingFutureLimiter.ThresholdListener() {
+            @Override
+            public void onHiLimitReached() {
+                thresholdCallCounter.incrementAndGet();
+            }
+            @Override
+            public void onLowLimitSubceed() {}
+        });
+
+        for (int i = 0; i < 9; i ++) {
             limiter.enqueueUnlimited(createTask());
         }
-        assertEquals(3, limiter.getPendingCount());
-        assertTrue(sessionStub.isReadable());
+        assertEquals(limiter.getPendingCount(), 9);
+        assertEquals(thresholdCallCounter.get(), 0);
 
-        limiter.enqueueUnlimited(createTask());
-        assertFalse(sessionStub.isReadable());
+        CompletableFuture localLatch = new CompletableFuture();
 
-        unleashLatchAndCompleteAllTask();
-        with().pollDelay(10L, TimeUnit.MILLISECONDS)
-                .until(() -> limiter.getPendingCount() == 0);
-        with().pollDelay(0L, TimeUnit.MILLISECONDS)
-                .atMost(500, TimeUnit.MILLISECONDS)
-                .until(sessionStub::isReadable);
+        limiter.enqueueUnlimited(localLatch.thenApplyAsync((s) -> s));
+
+        assertEquals(thresholdCallCounter.get(), 1);
+        assertEquals(limiter.getPendingCount(), 10);
+
+        for (int i = 0; i < 10; i ++) {
+            limiter.enqueueUnlimited(localLatch.thenApplyAsync((s) -> s));
+        }
+        assertEquals(thresholdCallCounter.get(), 1);
+        assertEquals(limiter.getPendingCount(), 20);
+
+
+        localLatch.complete("");
+
+        await().atMost(1, TimeUnit.SECONDS).until(() -> limiter.getPendingCount() == 9);
+
+        CompletableFuture parallelEnqueueLatch = new CompletableFuture();
+
+        for (int i = 0; i < 50; i++) {
+            parallelEnqueueLatch.thenApplyAsync((s) -> {
+                try {
+                    return limiter.enqueueUnlimited(createTask());
+                } catch (InterruptedException ignore) {}
+                return s;
+            });
+        }
+
+        parallelEnqueueLatch.complete("");
+
+        await().atMost(1, TimeUnit.SECONDS).until(() -> limiter.getPendingCount() == 59);
+        Thread.sleep(1000);
+        assertEquals(thresholdCallCounter.get(), 2);
+    }
+
+    @Test
+    public void dequeueing_futures_should_call_onLowLimitSubceed_exactly_once() throws Exception {
+        PendingFutureLimiter limiter = new LimiterBuilder()
+                .maxPendingCount(10)
+                .build();
+
+        AtomicInteger lowLimitCallCounter = new AtomicInteger(0);
+        limiter.setThresholdListener(new PendingFutureLimiter.ThresholdListener() {
+            @Override
+            public void onHiLimitReached() {}
+
+            @Override
+            public void onLowLimitSubceed() {
+                lowLimitCallCounter.incrementAndGet();
+            }
+        });
+
+        for (int i = 0; i < 7; i++) {
+            limiter.enqueueUnlimited(createTask());
+        }
+
+        CompletableFuture singleFuture = new CompletableFuture();
+        limiter.enqueueUnlimited(singleFuture);
+
+        assertEquals(limiter.getPendingCount(), 8);
+        assertEquals(lowLimitCallCounter.get(), 0);
+
+        singleFuture.complete("");
+        await().atMost(1, TimeUnit.SECONDS).until(() -> lowLimitCallCounter.get() == 1);
+
+
+        CompletableFuture localLatch = new CompletableFuture();
+
+        for (int i = 0; i < 20; i++) {
+            limiter.enqueueUnlimited(localLatch.thenApplyAsync((s) -> s));
+        }
+
+        assertEquals(limiter.getPendingCount(), 27);
+
+        localLatch.complete("");
+        Thread.sleep(1000); //We wait to make sure all futures completed and onLowLimitSubceed won' be invoked
+                                // more than once, so we can't use awaitility
+        assertEquals(lowLimitCallCounter.get(), 2);
     }
 
     @Test

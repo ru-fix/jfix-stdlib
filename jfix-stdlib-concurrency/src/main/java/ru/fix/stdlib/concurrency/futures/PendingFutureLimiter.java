@@ -178,12 +178,6 @@ public class PendingFutureLimiter {
      */
     protected <T> CompletableFuture<T> internalEnqueue(CompletableFuture<T> future,
                                                        boolean needToBlock) throws InterruptedException {
-        long queueSize = counter.incrementAndGet();
-
-        if (queueSize == maxPendingCount && thresholdListener != null) {
-            thresholdListener.onHiLimitReached();
-        }
-
         if (needToBlock) {
             awaitOpportunityToEnqueueAndPurge();
         }
@@ -212,6 +206,12 @@ public class PendingFutureLimiter {
             return null;
         });
         pendingFutures.put(resultFuture, System.currentTimeMillis());
+        long queueSize = counter.incrementAndGet();
+
+        if (queueSize == maxPendingCount && thresholdListener != null) {
+            thresholdListener.onHiLimitReached();
+        }
+
         return resultFuture;
     }
 
