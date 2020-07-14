@@ -274,6 +274,8 @@ public class PendingFutureLimiterTest {
                 .maxPendingCount(10)
                 .build();
 
+        limiter.changeThresholdFactor(0.3f);
+
         AtomicInteger lowLimitCallCounter = new AtomicInteger(0);
         limiter.setThresholdListener(new PendingFutureLimiter.ThresholdListener() {
             @Override

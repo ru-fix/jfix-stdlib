@@ -90,12 +90,6 @@ public class PendingFutureLimiter {
      */
     public PendingFutureLimiter setMaxPendingCount(int maxPendingCount) {
 
-        int threshold = calculateThreshold(maxPendingCount, thresholdFactor);
-
-        if (threshold <= 0 || threshold >= maxPendingCount) {
-            throw new IllegalArgumentException("Invalid thresholdFactor");
-        }
-
         this.maxPendingCount = maxPendingCount;
 
         synchronized (counter) {
@@ -133,7 +127,7 @@ public class PendingFutureLimiter {
 
         int threshold = calculateThreshold(maxPendingCount, thresholdFactor);
 
-        if (threshold <= 0 || threshold >= maxPendingCount) {
+        if (threshold < 0 || threshold > maxPendingCount) {
             throw new IllegalArgumentException("Invalid thresholdFactor");
         }
 
