@@ -197,10 +197,11 @@ public class PendingFutureLimiter {
             long value = counter.decrementAndGet();
             pendingFutures.remove(resultFuture);
 
+            if (value == getThreshold() && thresholdListener != null) {
+                thresholdListener.onLowLimitSubceed();
+            }
+
             if (value == 0 || value == getThreshold()) {
-                if (value == getThreshold() && thresholdListener != null) {
-                    thresholdListener.onLowLimitSubceed();
-                }
                 synchronized (counter) {
                     counter.notifyAll();
                 }
