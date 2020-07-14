@@ -37,6 +37,21 @@ public class PendingFutureLimiterTest {
     }
 
     @Test
+    public void threshold_change_border_values_test() throws Exception {
+        PendingFutureLimiter limiter = new LimiterBuilder().maxPendingCount(3).build();
+        limiter.changeThresholdFactor(0f);
+        limiter.changeThresholdFactor(1f);
+        limiter.changeThresholdFactor(0.5f);
+        assertThrows(IllegalArgumentException.class, () -> limiter.changeThresholdFactor(-1f));
+
+        limiter.changeThresholdFactor(-0.1f);
+        assertThrows(IllegalArgumentException.class, () -> limiter.setMaxPendingCount(10));
+
+        limiter.changeThresholdFactor(1.1f);
+        assertThrows(IllegalArgumentException.class, () -> limiter.setMaxPendingCount(10));
+    }
+
+    @Test
     public void block_on_task_when_pending_count_bigger_than_max_border() throws Exception {
 
         PendingFutureLimiter limiter = new LimiterBuilder()
