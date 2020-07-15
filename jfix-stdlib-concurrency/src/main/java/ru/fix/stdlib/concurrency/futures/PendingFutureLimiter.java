@@ -192,6 +192,7 @@ public class PendingFutureLimiter {
         });
 
         long queueSize = counter.incrementAndGet();
+        pendingFutures.put(resultFuture, System.currentTimeMillis());
 
         resultFuture.handleAsync((any, exc) -> {
             long value = counter.decrementAndGet();
@@ -208,7 +209,6 @@ public class PendingFutureLimiter {
             }
             return null;
         });
-        pendingFutures.put(resultFuture, System.currentTimeMillis());
 
         if (queueSize == maxPendingCount && thresholdListener != null) {
             thresholdListener.onHiLimitReached();
