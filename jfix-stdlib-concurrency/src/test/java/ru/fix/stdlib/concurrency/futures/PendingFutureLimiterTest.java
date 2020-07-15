@@ -42,13 +42,12 @@ public class PendingFutureLimiterTest {
         limiter.changeThresholdFactor(0f);
         limiter.changeThresholdFactor(1f);
         limiter.changeThresholdFactor(0.5f);
+        limiter.changeThresholdFactor(-0.0f);
+
         assertThrows(IllegalArgumentException.class, () -> limiter.changeThresholdFactor(-1f));
-
-        limiter.changeThresholdFactor(-0.1f);
-        assertThrows(IllegalArgumentException.class, () -> limiter.setMaxPendingCount(10));
-
-        limiter.changeThresholdFactor(1.1f);
-        assertThrows(IllegalArgumentException.class, () -> limiter.setMaxPendingCount(10));
+        assertThrows(IllegalArgumentException.class, () -> limiter.changeThresholdFactor(-0.1f));
+        assertThrows(IllegalArgumentException.class, () -> limiter.changeThresholdFactor(1.1f));
+        assertThrows(IllegalArgumentException.class, () -> limiter.changeThresholdFactor(1.0000001f));
     }
 
     @Test

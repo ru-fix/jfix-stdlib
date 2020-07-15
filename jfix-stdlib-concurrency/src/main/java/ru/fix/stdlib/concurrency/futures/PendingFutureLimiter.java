@@ -90,12 +90,6 @@ public class PendingFutureLimiter {
      */
     public PendingFutureLimiter setMaxPendingCount(int maxPendingCount) {
 
-        int threshold = calculateThreshold(maxPendingCount, thresholdFactor);
-
-        if (threshold < 0 || threshold > maxPendingCount) {
-            throw new IllegalArgumentException("Invalid thresholdFactor");
-        }
-
         this.maxPendingCount = maxPendingCount;
 
         synchronized (counter) {
@@ -125,15 +119,18 @@ public class PendingFutureLimiter {
      * I. e., to get a threshold 800 with maxPendingCount 1000,
      * you should set thresholdFactor = 0.2
      *
-     * @param thresholdFactor % of free slots from maxPendingCount,
+     * @param thresholdFactor split of free slots from maxPendingCount,
      *                        when it is reached the signal about critical workload will be sent
      *                        to {@link ThresholdListener#onLowLimitSubceed()}
+     * @throws IllegalArgumentException when thresholdFactor is less than 0 or more than 1
      */
     public PendingFutureLimiter changeThresholdFactor(float thresholdFactor) {
 
-        int threshold = calculateThreshold(maxPendingCount, thresholdFactor);
+        if (Math.signum(thresholdFactor) < 0) {
+            throw new IllegalArgumentException("Invalid thresholdFactor");
+        }
 
-        if (threshold < 0 || threshold > maxPendingCount) {
+        if (Float.compare(thresholdFactor, 1f) > 0) {
             throw new IllegalArgumentException("Invalid thresholdFactor");
         }
 
