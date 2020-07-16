@@ -6,12 +6,11 @@ import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.dynamic.property.api.PropertySubscription;
 
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 /**
  * Limit number of scheduled async operations.
@@ -91,12 +90,6 @@ public class PendingFutureLimiter {
      */
     public PendingFutureLimiter setMaxPendingCount(int maxPendingCount) {
 
-        int threshold = calculateThreshold(maxPendingCount, thresholdFactor);
-
-        if (threshold <= 0 || threshold >= maxPendingCount) {
-            throw new IllegalArgumentException("Invalid thresholdFactor");
-        }
-
         this.maxPendingCount = maxPendingCount;
 
         synchronized (counter) {
@@ -126,15 +119,18 @@ public class PendingFutureLimiter {
      * I. e., to get a threshold 800 with maxPendingCount 1000,
      * you should set thresholdFactor = 0.2
      *
-     * @param thresholdFactor % of free slots from maxPendingCount,
+     * @param thresholdFactor split of free slots from maxPendingCount,
      *                        when it is reached the signal about critical workload will be sent
      *                        to {@link ThresholdListener#onLowLimitSubceed()}
+     * @throws IllegalArgumentException when thresholdFactor is less than 0 or more than 1
      */
     public PendingFutureLimiter changeThresholdFactor(float thresholdFactor) {
 
-        int threshold = calculateThreshold(maxPendingCount, thresholdFactor);
+        if (Math.signum(thresholdFactor) < 0) {
+            throw new IllegalArgumentException("Invalid thresholdFactor");
+        }
 
-        if (threshold <= 0 || threshold >= maxPendingCount) {
+        if (Float.compare(thresholdFactor, 1f) > 0) {
             throw new IllegalArgumentException("Invalid thresholdFactor");
         }
 
@@ -179,34 +175,43 @@ public class PendingFutureLimiter {
      */
     protected <T> CompletableFuture<T> internalEnqueue(CompletableFuture<T> future,
                                                        boolean needToBlock) throws InterruptedException {
-        if (counter.get() == maxPendingCount && thresholdListener != null) {
-            thresholdListener.onHiLimitReached();
-        }
-
         if (needToBlock) {
             awaitOpportunityToEnqueueAndPurge();
         }
 
-        counter.incrementAndGet();
-        pendingFutures.put(future, System.currentTimeMillis());
-        future.handleAsync((any, exc) -> {
+        CompletableFuture<T> resultFuture = future.handleAsync((any, exc) -> {
             if (exc != null) {
                 log.error(exc.getMessage(), exc);
+                throw new CompletionException(exc);
+            } else {
+                return any;
             }
+        });
+
+        long queueSize = counter.incrementAndGet();
+        pendingFutures.put(resultFuture, System.currentTimeMillis());
+
+        resultFuture.handleAsync((any, exc) -> {
             long value = counter.decrementAndGet();
-            pendingFutures.remove(future);
+            pendingFutures.remove(resultFuture);
+
+            if (value == getThreshold() && thresholdListener != null) {
+                thresholdListener.onLowLimitSubceed();
+            }
 
             if (value == 0 || value == getThreshold()) {
-                if (thresholdListener != null) {
-                    thresholdListener.onLowLimitSubceed();
-                }
                 synchronized (counter) {
                     counter.notifyAll();
                 }
             }
             return null;
         });
-        return future;
+
+        if (queueSize == maxPendingCount && thresholdListener != null) {
+            thresholdListener.onHiLimitReached();
+        }
+
+        return resultFuture;
     }
 
     private void awaitOpportunityToEnqueueAndPurge() throws InterruptedException {
@@ -282,20 +287,16 @@ public class PendingFutureLimiter {
             return;
         }
 
+        Predicate<Map.Entry<CompletableFuture<?>, Long>> isTimeoutPredicate =
+                entry -> System.currentTimeMillis() - entry.getValue() > maxFutureExecuteTime;
+
         String errorMessage = "Timeout exception. Completable future did not complete for at least "
                 + maxFutureExecuteTime + " milliseconds. Pending count: " + getPendingCount();
 
         Consumer<Map.Entry<CompletableFuture<?>, Long>> completeExceptionally =
-                entry -> entry.getKey().completeExceptionally(new Exception(errorMessage));
-
-        Predicate<Map.Entry<CompletableFuture<?>, Long>> isTimeoutPredicate =
-                entry -> System.currentTimeMillis() - entry.getValue() > maxFutureExecuteTime;
+                entry -> entry.getKey().completeExceptionally(new TimeoutException(errorMessage));
 
         pendingFutures.entrySet().stream().filter(isTimeoutPredicate).forEach(completeExceptionally);
-
-        if (pendingFutures.entrySet().stream().anyMatch(isTimeoutPredicate)) {
-            log.error(errorMessage);
-        }
     }
 
 
