@@ -83,11 +83,15 @@ public class RateLimitedDispatcher implements AutoCloseable {
         return submit(supplier).thenComposeAsync(cf -> cf);
     }
 
-    public <ListenableT> CompletableFuture<ListenableT> compose(
-            Supplier<ListenableT> resultSupplier,
-            AsyncResultSubscriber<ListenableT> resultSubscriber
+    public <AsyncResultT> CompletableFuture<AsyncResultT> compose(
+            AsyncOperation<AsyncResultT> asyncOperation,
+            AsyncResultSubscriber<AsyncResultT> asyncResultSubscriber
     ) {
-        return null; //TODO
+        return submit(() -> {
+            AsyncResultT asyncResult = asyncOperation.invoke();
+            asyncResultSubscriber.subscribe(asyncResult, () -> windowSemaphore.release());
+            return asyncResult;
+        });
     }
 
     /**
@@ -157,8 +161,14 @@ public class RateLimitedDispatcher implements AutoCloseable {
         profiler.detachIndicator(QUEUE_SIZE_INDICATOR);
     }
 
+
     @FunctionalInterface
-    public interface AsyncResultListener {
+    interface AsyncOperation<AsyncResultT> {
+        AsyncResultT invoke();
+    }
+
+    @FunctionalInterface
+    public interface AsyncResultCallback {
         /**
          * Async operation is complete successfully or with exception.
          */
@@ -166,8 +176,8 @@ public class RateLimitedDispatcher implements AutoCloseable {
     }
 
     @FunctionalInterface
-    public interface AsyncResultSubscriber<ListenableResultT> {
-        void subscribe(ListenableResultT asyncResult, AsyncResultListener asyncResultListener);
+    public interface AsyncResultSubscriber<AsyncResultT> {
+        void subscribe(AsyncResultT asyncResult, AsyncResultCallback asyncResultCallback);
     }
 
     @SuppressWarnings({"unchecked"})
