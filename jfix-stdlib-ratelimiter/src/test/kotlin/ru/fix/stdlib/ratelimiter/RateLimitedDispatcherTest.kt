@@ -20,16 +20,15 @@ import ru.fix.aggregating.profiler.AggregatingProfiler
 import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.aggregating.profiler.Profiler
 import ru.fix.aggregating.profiler.ProfilerReport
+import ru.fix.dynamic.property.api.AtomicProperty
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.lang.Thread.sleep
 import java.time.Duration
-import java.util.concurrent.CompletableFuture
+import java.util.concurrent.*
 import java.util.concurrent.CompletableFuture.completedFuture
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicIntegerArray
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 @Execution(ExecutionMode.CONCURRENT)
@@ -125,7 +124,7 @@ class RateLimitedDispatcherTest {
         val report = `submit series of operations`(
                 ratePerSecond = RATE_PER_SECOND,
                 interations = ITERATIONS,
-                windowSize = 0)
+                windowSize = DynamicProperty.of(windowSize))
 
         val operationReport = report.profilerCallReports.single { it.identity.name == "operation" }
 
@@ -139,7 +138,7 @@ class RateLimitedDispatcherTest {
     private fun `submit series of operations`(
             ratePerSecond: Int,
             interations: Int,
-            windowSize: Int): ProfilerReport {
+            windowSize: DynamicProperty<Int>): ProfilerReport {
 
 
         val profiler = AggregatingProfiler()
@@ -179,36 +178,25 @@ class RateLimitedDispatcherTest {
 
     @Test
     fun `window blocks number of uncompleted operations `() {
+        val dispatcher = TrackableDispatcher()
+        dispatcher.windowProperty.set(10)
 
-        val dispatcher = createDispatcher(window = 10)
-
-        val futures = List(10) { CompletableFuture<Int>() }
-        for (future in futures) {
-            dispatcher.compose {
-                future
-            }
-        }
-
-        val asyncOperationIsInvoked = AtomicBoolean(false)
-
-        val asyncOperationSubmissionResult = dispatcher.compose {
-            asyncOperationIsInvoked.set(true)
-            completedFuture(11)
-        }
+        dispatcher.submitNTasks(10)
+        dispatcher.submitNTasks(1)
 
         sleep(3000)
-        asyncOperationSubmissionResult.isDone.shouldBeFalse()
 
-        futures[5].complete(5)
+        for(task in 0..9)
+            dispatcher.isSubmittedTaskInvoked(task).shouldBeTrue()
+        dispatcher.isSubmittedTaskInvoked(10).shouldBeFalse()
+
+        dispatcher.completeTask(4)
 
         await().atMost(Duration.ofSeconds(10)).until {
-            asyncOperationSubmissionResult.isDone
+            dispatcher.isSubmittedTaskInvoked(10)
         }
-        asyncOperationSubmissionResult.get().shouldBe(11)
 
-        futures.forEachIndexed { index, future -> future.complete(index) }
-
-        dispatcher.close()
+        dispatcher.completeAllAndClose()
     }
 
     @Test
@@ -220,7 +208,7 @@ class RateLimitedDispatcherTest {
         val report = `submit series of operations`(
                 ratePerSecond = RATE_PER_SECOND,
                 interations = ITERATIONS,
-                windowSize = 100)
+                windowSize = DynamicProperty.of(100))
 
         val metricNamePrefix = "RateLimiterDispatcher.dispatcher-name"
 
@@ -242,16 +230,67 @@ class RateLimitedDispatcherTest {
 
     }
 
+    
 
-    @Disabled("TODO")
     @Test
-    fun `increasing window size allows to submit new operations until new limit is reached`() {
+    fun `increasing window size allows to submit new operations immediately up to the new limit`() {
+        
+        val trackableDispatcher = TrackableDispatcher()
+        trackableDispatcher.windowProperty.set(10)
+
+        trackableDispatcher.submitNTasks(11)
+
+        sleep(3000)
+        for(task in 0..9)
+            trackableDispatcher.isSubmittedTaskInvoked(task).shouldBeTrue()
+        trackableDispatcher.isSubmittedTaskInvoked(10).shouldBeFalse()
+
+        trackableDispatcher.windowProperty.set(11)
+
+        trackableDispatcher.submitNTasks(1)
+        trackableDispatcher.completeTask(0)
+
+
+        await().atMost(Duration.ofSeconds(10)).until {
+            (0..11).map { task ->
+                trackableDispatcher.isSubmittedTaskInvoked(task)
+            }.reduce { acc, value -> acc and value }
+        }
+
+        trackableDispatcher.completeAllAndClose();
     }
 
 
-    @Disabled("TODO")
     @Test
     fun `decreasing window size reduce limit`() {
+
+        val trackableDispatcher = TrackableDispatcher()
+        trackableDispatcher.windowProperty.set(10)
+
+        trackableDispatcher.submitNTasks(10)
+
+        sleep(4000)
+        for(task in 0..9)
+            trackableDispatcher.isSubmittedTaskInvoked(task).shouldBeTrue()
+
+        trackableDispatcher.completeTask(0..9)
+
+
+        trackableDispatcher.windowProperty.set(5)
+        trackableDispatcher.submitNTasks(6)
+        sleep(4000)
+        for(task in 10..14)
+            trackableDispatcher.isSubmittedTaskInvoked(task).shouldBeTrue()
+        trackableDispatcher.isSubmittedTaskInvoked(15).shouldBeFalse()
+
+        trackableDispatcher.completeTask(10)
+
+        await().atMost(Duration.ofSeconds(10)).until {
+            trackableDispatcher.isSubmittedTaskInvoked(15)
+        }
+
+        trackableDispatcher.completeAllAndClose();
+
     }
 
 
@@ -329,9 +368,9 @@ class RateLimitedDispatcherTest {
         }
     }
 
-    private fun createDispatcher(
+    fun createDispatcher(
             rateLimitRequestPerSecond: Int = 500,
-            window: Int = 0,
+            window: DynamicProperty<Int> = DynamicProperty.of(0),
             closingTimeout: Int = 5000,
             profiler: Profiler = NoopProfiler()) =
             RateLimitedDispatcher(
@@ -341,5 +380,49 @@ class RateLimitedDispatcherTest {
                     window,
                     DynamicProperty.of(closingTimeout.toLong())
             )
+
+    inner class TrackableDispatcher{
+        val windowProperty = AtomicProperty(0)
+        val dispatcher = createDispatcher(window = windowProperty)
+        val submittedTasksResults = ArrayList<CompletableFuture<Int>>()
+        val isSubmittedTaskInvoked = ArrayList<AtomicBoolean>()
+
+        fun submitNTasks(count: Int) {
+            repeat(count){
+                val index = submittedTasksResults.size
+                val future = CompletableFuture<Int>()
+
+                submittedTasksResults.add(future)
+                isSubmittedTaskInvoked.add(AtomicBoolean(false))
+
+                dispatcher.compose {
+                    isSubmittedTaskInvoked[index].set(true)
+                    future
+                }
+            }
+        }
+
+        fun completeTask(index: Int) {
+            submittedTasksResults[index].complete(index)
+        }
+        fun completeTask(range: IntRange) {
+            for(task in range) {
+                submittedTasksResults[task].complete(task)
+            }
+        }
+
+        fun isSubmittedTaskInvoked(index: Int) = isSubmittedTaskInvoked[index].get()
+
+        fun completeAllAndClose() {
+            submittedTasksResults.forEachIndexed { index, future -> future.complete(index) }
+
+            await().atMost(Duration.ofSeconds(10)).until {
+                isSubmittedTaskInvoked.filter { it.get() == false }.isEmpty()
+            }
+
+            dispatcher.close()
+        }
+
+    }
 
 }

@@ -7,6 +7,7 @@ import ru.fix.aggregating.profiler.PrefixedProfiler;
 import ru.fix.aggregating.profiler.ProfiledCall;
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
+import ru.fix.dynamic.property.api.PropertySubscription;
 
 import java.lang.invoke.MethodHandles;
 import java.time.temporal.ChronoUnit;
@@ -30,16 +31,24 @@ public class RateLimitedDispatcher implements AutoCloseable {
     private final AtomicReference<State> state = new AtomicReference<>();
 
     private final RateLimiter rateLimiter;
-    private final LinkedBlockingQueue<Task> queue = new LinkedBlockingQueue<>();
+    private final LinkedBlockingQueue<Task> taskQueue = new LinkedBlockingQueue<>();
+    private final LinkedBlockingQueue<ChangeWindowSizeCommand> commandQueue = new LinkedBlockingQueue<>();
+
     private final Thread thread;
 
     private final String name;
     private final Profiler profiler;
 
-    private final Integer windowSize;
+    /**
+     * Accessed only by single thread
+     */
+    private int windowSize = 0;
     private final DynamicProperty<Long> closingTimeout;
 
     private final Semaphore windowSemaphore;
+    private final PropertySubscription<Integer> windowSizeSubscription;
+
+
 
     /**
      * Creates new dispatcher instance
@@ -54,13 +63,12 @@ public class RateLimitedDispatcher implements AutoCloseable {
     public RateLimitedDispatcher(String name,
                                  RateLimiter rateLimiter,
                                  Profiler profiler,
-                                 Integer windowSize,
+                                 DynamicProperty<Integer> windowSize,
                                  DynamicProperty<Long> closingTimeout) {
         this.name = name;
         this.rateLimiter = rateLimiter;
-        this.windowSize = windowSize;
         this.closingTimeout = closingTimeout;
-        this.windowSemaphore = new Semaphore(windowSize > 0 ? windowSize : 0);
+        this.windowSemaphore = new Semaphore(0);
 
         this.profiler = new PrefixedProfiler(profiler, "RateLimiterDispatcher." + name + ".");
 
@@ -69,14 +77,23 @@ public class RateLimitedDispatcher implements AutoCloseable {
         state.set(State.RUNNING);
         thread.start();
 
-        this.profiler.attachIndicator(QUEUE_SIZE_INDICATOR, () -> (long) queue.size());
+        this.profiler.attachIndicator(QUEUE_SIZE_INDICATOR, () -> (long) taskQueue.size());
+
+        this.windowSizeSubscription = windowSize.createSubscription().setAndCallListener((oldValue, newValue) -> {
+            submitCommand(new ChangeWindowSizeCommand(oldValue != null ? oldValue : 0, newValue));
+        });
+    }
+
+    private void submitCommand(ChangeWindowSizeCommand command) {
+        commandQueue.add(command);
+        taskQueue.add(new AwakeFromWaitingQueueTask());
     }
 
     public RateLimitedDispatcher(String name,
                                  RateLimiter rateLimiter,
                                  Profiler profiler,
                                  DynamicProperty<Long> closingTimeout) {
-        this(name, rateLimiter, profiler, -1, closingTimeout);
+        this(name, rateLimiter, profiler, DynamicProperty.of(0), closingTimeout);
     }
 
     public <T> CompletableFuture<T> compose(Supplier<CompletableFuture<T>> supplier) {
@@ -121,7 +138,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
         @SuppressWarnings("resource")
         ProfiledCall queueWaitTime = profiler.start("queue_wait");
-        queue.add(new Task(result, supplier, queueWaitTime));
+        taskQueue.add(new Task(result, supplier, queueWaitTime));
 
         return result;
     }
@@ -137,8 +154,10 @@ public class RateLimitedDispatcher implements AutoCloseable {
             logger.info("Close called on RateLimitedDispatcher [{}] with state [{}]", name, state.get());
             return;
         }
+        windowSizeSubscription.close();
+
         // If queue is empty this will awake waiting Thread
-        queue.add(new PoisonPillTask());
+        taskQueue.add(new AwakeFromWaitingQueueTask());
 
         if (closingTimeout.get() < 0) {
             logger.warn("Rate limiter timeout must be greater than or equals 0. Current value is {}, rate limiter name: {}",
@@ -189,9 +208,11 @@ public class RateLimitedDispatcher implements AutoCloseable {
         @Override
         public void run() {
             while (state.get() == State.RUNNING ||
-                    state.get() == State.SHUTTING_DOWN && !queue.isEmpty()) {
+                    state.get() == State.SHUTTING_DOWN && !taskQueue.isEmpty()) {
                 try {
-                    processingCycle();
+                    processCommandsIfExist();
+                    waitForTaskInQueueAndProcess();
+
                 } catch (InterruptedException interruptedException) {
                     logger.error(interruptedException.getMessage(), interruptedException);
                     break;
@@ -208,17 +229,26 @@ public class RateLimitedDispatcher implements AutoCloseable {
                 taskExceptionText = "RateLimitedDispatcher [" + name + "] was interrupted";
             }
 
-            queue.forEach(task -> {
+            taskQueue.forEach(task -> {
                 task.getFuture().completeExceptionally(new RejectedExecutionException(taskExceptionText));
                 task.getQueueWaitTime().close();
             });
 
         }
 
-        private void processingCycle() throws InterruptedException {
-            Task task = queue.take();
+        private void processCommandsIfExist() throws InterruptedException{
+            for (ChangeWindowSizeCommand command = commandQueue.poll();
+                 command != null;
+                 command = commandQueue.poll()) {
 
-            if (task instanceof PoisonPillTask) {
+                command.apply();
+            }
+        }
+
+        private void waitForTaskInQueueAndProcess() throws InterruptedException {
+            Task task = taskQueue.take();
+
+            if (task instanceof AwakeFromWaitingQueueTask) {
                 return;
             }
 
@@ -234,7 +264,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
                                 rejectDueToTerminateState(future);
                                 return;
                             }
-                            windowAcquired = windowSemaphore.tryAcquire(5, TimeUnit.SECONDS);
+                            windowAcquired = windowSemaphore.tryAcquire(3, TimeUnit.SECONDS);
                         }
                         acquireWindowTime.stop();
                     }
@@ -248,7 +278,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
                                 rejectDueToTerminateState(future);
                                 return;
                             }
-                        limitAcquired = rateLimiter.tryAcquire(5, ChronoUnit.SECONDS);
+                        limitAcquired = rateLimiter.tryAcquire(3, ChronoUnit.SECONDS);
                     }
                     limitAcquireTime.stop();
                 }
@@ -295,9 +325,35 @@ public class RateLimitedDispatcher implements AutoCloseable {
         }
     }
 
-    private static class PoisonPillTask extends Task<Void> {
-        public PoisonPillTask() {
+    private static class AwakeFromWaitingQueueTask extends Task<Void> {
+        public AwakeFromWaitingQueueTask() {
             super(new CompletableFuture<>(), () -> null, new NoopProfiler.NoopProfiledCall());
+        }
+    }
+
+    interface Command{
+        void apply() throws InterruptedException;
+    }
+
+    private class ChangeWindowSizeCommand implements Command {
+        private final int oldSize;
+        private final int newSize;
+
+        public ChangeWindowSizeCommand(int oldSize, int newSize) {
+            this.oldSize = oldSize;
+            this.newSize = newSize;
+        }
+
+        @Override
+        public void apply() throws InterruptedException {
+            if(newSize == oldSize)
+                return;
+
+            windowSize = newSize;
+            if(newSize > oldSize)
+                windowSemaphore.release(newSize - oldSize);
+            else
+                windowSemaphore.acquire(oldSize - newSize);
         }
     }
 
