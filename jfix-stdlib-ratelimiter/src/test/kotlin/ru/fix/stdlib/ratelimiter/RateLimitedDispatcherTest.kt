@@ -1,8 +1,10 @@
 package ru.fix.stdlib.ratelimiter
 
+import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.doubles.shouldBeBetween
 import io.kotest.matchers.shouldBe
+import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.parallel.Execution
@@ -11,7 +13,10 @@ import org.slf4j.LoggerFactory
 import ru.fix.aggregating.profiler.AggregatingProfiler
 import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
+import java.lang.Thread.sleep
+import java.time.Duration
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
@@ -107,6 +112,45 @@ class RateLimitedDispatcherTest {
         dispatcher.close()
     }
 
+    @Test
+    fun `if window size is not empty and quite big, restricted by limiter`() {
+
+    }
+
+    @Test
+    fun `window blocks number of uncompleted operations `() {
+
+        val dispatcher = createDispatcher(window = 10)
+
+        val futures = List(10) { CompletableFuture<Int>() }
+        for (future in futures) {
+            dispatcher.compose {
+                future
+            }
+        }
+
+        val asyncOperationIsInvoked = AtomicBoolean(false)
+
+        val asyncOperationSubmissionResult = dispatcher.compose {
+            asyncOperationIsInvoked.set(true)
+            CompletableFuture.completedFuture(11)
+        }
+
+        sleep(3000)
+        asyncOperationSubmissionResult.isDone.shouldBeFalse()
+
+        futures[5].complete(5)
+
+        await().atMost(Duration.ofSeconds(10)).until {
+            asyncOperationSubmissionResult.isDone
+        }
+        asyncOperationSubmissionResult.get().shouldBe(11)
+
+        futures.forEachIndexed { index, future -> future.complete(index) }
+
+        dispatcher.close()
+    }
+
 
     @Test
     fun `'queue_size' indicator shows unprocessed pending requests in queue`() {
@@ -134,14 +178,6 @@ class RateLimitedDispatcherTest {
 
     }
 
-
-    @Test
-    fun `if window size is not empty, still restricted by limiter`() {
-    }
-
-    @Test
-    fun `window blocks number of uncompleted operations `() {
-    }
 
     @Test
     fun `increasing window size allows to submit new operations until new limit is reached`() {
