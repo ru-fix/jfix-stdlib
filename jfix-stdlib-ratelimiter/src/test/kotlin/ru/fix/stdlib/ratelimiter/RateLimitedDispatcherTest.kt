@@ -6,6 +6,7 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.doubles.shouldBeBetween
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.awaitility.Awaitility.await
@@ -355,6 +356,20 @@ class RateLimitedDispatcherTest {
                         .cause.shouldBeInstanceOf<RejectedExecutionException>()
             }
         }
+    }
+
+    @Test
+    fun `task, submitted in closed dispatcher, is rejected with exception`(){
+        val dispatcher = createDispatcher()
+        dispatcher.close()
+
+        val result = dispatcher.compose {
+            completedFuture(true)
+        }
+
+        result.isCompletedExceptionally.shouldBeTrue()
+        shouldThrow<ExecutionException> { result.get() }
+                .cause.shouldBeInstanceOf<RejectedExecutionException>()
     }
 
     fun createDispatcher(
