@@ -1,10 +1,12 @@
 package ru.fix.stdlib.ratelimiter
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.doubles.shouldBeBetween
 import io.kotest.matchers.shouldBe
 import org.awaitility.Awaitility.await
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.parallel.Execution
@@ -52,17 +54,40 @@ class RateLimitedDispatcherTest {
     }
 
     @Test
-    fun `dispatch async operation with CompletableFuture result type, operation invoked and it's result returned`() {
+    fun `dispatch async operation with successfull CompletableFuture, operation invoked and it's result returned`() {
         val dispatcher = createDispatcher()
 
         val operationResult = Object()
-        fun userAsyncOperation(): CompletableFuture<Object> {
+        fun userAsyncOperation(): CompletableFuture<Any> {
             return CompletableFuture.completedFuture(operationResult)
         }
 
-        val delayedSubmission = dispatcher.compose { userAsyncOperation() }
+        val delayedSubmissionFuture = dispatcher.compose { userAsyncOperation() }
 
-        (operationResult === delayedSubmission.get()).shouldBeTrue()
+        (operationResult === delayedSubmissionFuture.get()).shouldBeTrue()
+
+        dispatcher.close()
+    }
+
+
+    @Test
+    fun `dispatch async operation with exceptional CompletableFuture, operation invoked and it's result returned`() {
+        val dispatcher = createDispatcher()
+
+        val asyncOperationException = Exception("some error")
+
+        fun userAsyncOperation(): CompletableFuture<Any> {
+            return CompletableFuture<Any>().apply{
+                completeExceptionally(asyncOperationException)
+            }
+        }
+
+        val delayedSubmissionFuture = dispatcher.compose { userAsyncOperation() }
+
+        delayedSubmissionFuture.isCompletedExceptionally.shouldBeTrue()
+        val actualException = shouldThrow<Exception> { delayedSubmissionFuture.get() }
+
+        actualException.shouldBe(asyncOperationException)
 
         dispatcher.close()
     }
@@ -152,38 +177,44 @@ class RateLimitedDispatcherTest {
     }
 
 
+    @Disabled("TODO")
     @Test
     fun `'queue_size' indicator shows unprocessed pending requests in queue`() {
 
     }
 
+    @Disabled("TODO")
     @Test
     fun `'queue_wait' metric shows time span between enqueueing and dequeueing`() {
 
     }
 
+    @Disabled("TODO")
     @Test
     fun `'acquire_limit' metric shows how long it took to pass rate limit restriction`() {
 
     }
 
+    @Disabled("TODO")
     @Test
     fun `'acquire_window' metric shows how long it took to pass window size restriction`() {
 
     }
 
 
+    @Disabled("TODO")
     @Test
     fun `metric shows queue-wait`() {
 
     }
 
-
+    @Disabled("TODO")
     @Test
     fun `increasing window size allows to submit new operations until new limit is reached`() {
     }
 
 
+    @Disabled("TODO")
     @Test
     fun `decreasing window size reduce limit`() {
     }
