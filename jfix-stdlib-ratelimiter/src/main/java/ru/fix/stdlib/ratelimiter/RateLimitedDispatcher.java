@@ -16,6 +16,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
@@ -27,6 +28,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
     private static final String QUEUE_SIZE_INDICATOR = "queue_size";
+    private static final String ACTIVE_ASYNC_OPERATIONS = "active_async_operations";
 
     private final AtomicReference<State> state = new AtomicReference<>();
 
@@ -47,6 +49,8 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
     private final Semaphore windowSemaphore;
     private final PropertySubscription<Integer> windowSizeSubscription;
+
+    private final AtomicInteger activeAsyncOperations = new AtomicInteger();
 
 
 
@@ -78,10 +82,20 @@ public class RateLimitedDispatcher implements AutoCloseable {
         thread.start();
 
         this.profiler.attachIndicator(QUEUE_SIZE_INDICATOR, () -> (long) taskQueue.size());
+        this.profiler.attachIndicator(ACTIVE_ASYNC_OPERATIONS, () -> (long) activeAsyncOperations.get());
 
         this.windowSizeSubscription = windowSize.createSubscription().setAndCallListener((oldValue, newValue) -> {
             submitCommand(new ChangeWindowSizeCommand(oldValue != null ? oldValue : 0, newValue));
         });
+    }
+
+    private void asyncOperationStarted(){
+        activeAsyncOperations.incrementAndGet();
+    }
+
+    private void asyncOperationCompleted(){
+        activeAsyncOperations.decrementAndGet();
+        windowSemaphore.release();
     }
 
     private void submitCommand(ChangeWindowSizeCommand command) {
@@ -99,7 +113,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
     public <T> CompletableFuture<T> compose(Supplier<CompletableFuture<T>> supplier) {
         return submit(
                 () -> supplier.get()
-                        .whenComplete((t, throwable) -> windowSemaphore.release())
+                        .whenComplete((t, throwable) -> asyncOperationCompleted())
         ).thenComposeAsync(cf -> cf);
     }
 
@@ -109,7 +123,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
     ) {
         return submit(() -> {
             AsyncResultT asyncResult = asyncOperation.invoke();
-            asyncResultSubscriber.subscribe(asyncResult, windowSemaphore::release);
+            asyncResultSubscriber.subscribe(asyncResult, this::asyncOperationCompleted);
             return asyncResult;
         });
     }
@@ -284,9 +298,11 @@ public class RateLimitedDispatcher implements AutoCloseable {
                 }
 
                 Object result = profiler.profile(
-                        "supplied_operation",
+                        "supply_operation",
                         () -> task.getSupplier().get()
                 );
+                asyncOperationStarted();
+
                 future.complete(result);
             } catch (Exception e) {
                 future.completeExceptionally(e);

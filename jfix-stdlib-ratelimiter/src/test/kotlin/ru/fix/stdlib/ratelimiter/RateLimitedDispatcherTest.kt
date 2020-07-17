@@ -221,16 +221,16 @@ class RateLimitedDispatcherTest {
         report.profilerCallReports.single { it.identity.name == "$metricNamePrefix.acquire_limit" }
                 .stopSum.shouldBe(ITERATIONS)
 
-        report.profilerCallReports.single { it.identity.name == "$metricNamePrefix.supplied_operation" }
+        report.profilerCallReports.single { it.identity.name == "$metricNamePrefix.supply_operation" }
                 .stopSum.shouldBe(ITERATIONS)
 
         report.indicators.map { it.key.name }.shouldContain("$metricNamePrefix.queue_size")
 
-        logger.info(report.toString())
+        report.indicators.map { it.key.name }.shouldContain("$metricNamePrefix.active_async_operations")
 
+        logger.info(report.toString())
     }
 
-    
 
     @Test
     fun `increasing window size allows to submit new operations immediately up to the new limit`() {
