@@ -6,6 +6,7 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.doubles.shouldBeBetween
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
@@ -22,6 +23,8 @@ import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletableFuture.completedFuture
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -273,35 +276,40 @@ class RateLimitedDispatcherTest {
         }
     }
 
-//    @Test
-//    fun shutdown_tasksNotCompletedInTimeout_areCompletedExceptionally() {
-//        createDispatcher(0).use { dispatch ->
-//            assertTimeoutPreemptively(Duration.ofSeconds(5)) {
-//                val blockingTaskIsStarted = CountDownLatch(1)
-//
-//                dispatch.submit {
-//                    blockingTaskIsStarted.countDown()
-//                    //Due to blocking nature of dispatch.close we hae to use sleep
-//                    Thread.sleep(1000)
-//                }
-//
-//                val futures = ArrayList<CompletableFuture<*>>()
-//                for (i in 1..3) {
-//                    futures.add(dispatch.submit { })
-//                }
-//
-//                blockingTaskIsStarted.await()
-//                dispatch.close()
-//
-//                CompletableFuture.allOf(*futures.toTypedArray()).exceptionally { null }.join()
-//
-//                futures.forEach { future: CompletableFuture<*> ->
-//                    assertTrue(future.isDone)
-//                    assertTrue(future.isCompletedExceptionally)
-//                }
-//            }
-//        }
-//    }
+    @Test
+    fun `on shutdown slow tasks complete exceptionally`() {
+        val dispatch = createDispatcher(closingTimeout = 0)
+
+        assertTimeoutPreemptively(Duration.ofSeconds(5)) {
+            val blockingTaskIsStarted = CountDownLatch(1)
+
+            dispatch.compose {
+                blockingTaskIsStarted.countDown()
+                //Due to blocking nature of dispatch.close we hae to use sleep
+                Thread.sleep(1000)
+                completedFuture(true)
+            }
+
+            val futures = ArrayList<CompletableFuture<*>>()
+            for (i in 1..3) {
+                futures.add(dispatch.compose {
+                    completedFuture(true)
+                })
+            }
+
+            blockingTaskIsStarted.await()
+            dispatch.close()
+
+            CompletableFuture.allOf(*futures.toTypedArray()).exceptionally { null }.join()
+
+            futures.forEach { future: CompletableFuture<*> ->
+                future.isDone.shouldBeTrue()
+                future.isCompletedExceptionally.shouldBeTrue()
+                shouldThrow<ExecutionException> { future.get() }
+                        .cause.shouldBeInstanceOf<RejectedExecutionException>()
+            }
+        }
+    }
 
     private fun createDispatcher(
             rateLimitRequestPerSecond: Int = 500,
