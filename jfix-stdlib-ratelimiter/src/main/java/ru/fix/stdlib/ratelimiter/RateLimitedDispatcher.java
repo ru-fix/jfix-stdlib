@@ -21,8 +21,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 /**
- * Dispatcher class which manages tasks execution with given rate. Queues and
- * executes all task in single processor thread.
+ * Manages tasks execution with given rate and window.
+ * Rate specify how many requests per second will be dispatched.
+ * Window size specify how many async operations with uncompleted result allowed.
+ * When Window or Rate restriction is reached, dispatcher will stop to process requests and enqueue them in umbound queue.
+ * Disaptcher executes all operations in single dedicated thread.
  */
 public class RateLimitedDispatcher implements AutoCloseable {
 
@@ -34,15 +37,14 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
     private final RateLimiter rateLimiter;
     private final LinkedBlockingQueue<Task> taskQueue = new LinkedBlockingQueue<>();
-    private final LinkedBlockingQueue<ChangeWindowSizeCommand> commandQueue = new LinkedBlockingQueue<>();
+    private final LinkedBlockingQueue<Command> commandQueue = new LinkedBlockingQueue<>();
 
     private final Thread thread;
-
     private final String name;
     private final Profiler profiler;
 
     /**
-     * Accessed only by single thread
+     * Accessed only by single dedicated thread
      */
     private int windowSize = 0;
     private final DynamicProperty<Long> closingTimeout;
@@ -50,8 +52,10 @@ public class RateLimitedDispatcher implements AutoCloseable {
     private final Semaphore windowSemaphore;
     private final PropertySubscription<Integer> windowSizeSubscription;
 
+    /**
+     * How many async operations executed but their results are not ready yet.
+     */
     private final AtomicInteger activeAsyncOperations = new AtomicInteger();
-
 
 
     /**
@@ -59,9 +63,9 @@ public class RateLimitedDispatcher implements AutoCloseable {
      *
      * @param name           name of dispatcher - will be used in metrics and worker's thread name
      * @param rateLimiter    rate limiter, which provides rate of operation
-     * @param windowSize     max amount of concurrently executing tasks
-     * @param closingTimeout max amount of time (in milliseconds) for waiting pending operations.
-     *                       If parameter equals 0 it means that operations was completed immediately.
+     * @param windowSize     ho many async operations with uncompleted result are allowed in dispatcher
+     * @param closingTimeout max amount of time (in milliseconds) to wait for pending operations during shutdown.
+     *                       If parameter equals 0 then dispatcher will not wait pending operations during closing process.
      *                       Any negative number will be interpreted as 0.
      */
     public RateLimitedDispatcher(String name,
@@ -98,7 +102,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
         windowSemaphore.release();
     }
 
-    private void submitCommand(ChangeWindowSizeCommand command) {
+    private void submitCommand(Command command) {
         commandQueue.add(command);
         taskQueue.add(new AwakeFromWaitingQueueTask());
     }
@@ -129,10 +133,10 @@ public class RateLimitedDispatcher implements AutoCloseable {
     }
 
     /**
-     * Submits task.
+     * Submits new operation to task queue.
      * <p>
-     * !WARN. Task should not be long running operation and should not block
-     * processing thread.
+     * WARNING: task should not be long running operation
+     * and should not block processing thread.
      *
      * @param supplier task to execute and retrieve result
      * @return feature which represent result of task execution
@@ -144,15 +148,14 @@ public class RateLimitedDispatcher implements AutoCloseable {
         State state = this.state.get();
         if (state != State.RUNNING) {
             RejectedExecutionException ex = new RejectedExecutionException(
-                    "RateLimiterDispatcher [" + name + "] is in [" + state + "] state"
+                    "RateLimiterDispatcher [" + name + "] is in '" + state + "' state"
             );
             result.completeExceptionally(ex);
             return result;
         }
 
-        @SuppressWarnings("resource")
         ProfiledCall queueWaitTime = profiler.start("queue_wait");
-        taskQueue.add(new Task(result, supplier, queueWaitTime));
+        taskQueue.add(new Task<>(result, supplier, queueWaitTime));
 
         return result;
     }
@@ -195,34 +198,51 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
         rateLimiter.close();
         profiler.detachIndicator(QUEUE_SIZE_INDICATOR);
+        profiler.detachIndicator(ACTIVE_ASYNC_OPERATIONS);
     }
 
 
+    /**
+     * Async operation that should be invoked by {@link RateLimitedDispatcher} at configurate rate.
+     * @param <AsyncResultT> represents result of async operation
+     */
     @FunctionalInterface
     public interface AsyncOperation<AsyncResultT> {
         AsyncResultT invoke();
     }
 
+    /**
+     * Informs {@link RateLimitedDispatcher} that async operation result is completed.
+     */
     @FunctionalInterface
     public interface AsyncResultCallback {
         /**
-         * Async operation is complete successfully or with exception.
+         * Invoke, when async operation result is completed successfully or with exception.
          */
         void onAsyncResultCompleted();
     }
 
+    /**
+     * Invoked by {@link RateLimitedDispatcher}.
+     * Should attach asyncResultCallback to asyncResult and invoke it when asyncResult is complete.
+     * @param <AsyncResultT> represents result of async operation
+     */
     @FunctionalInterface
     public interface AsyncResultSubscriber<AsyncResultT> {
+        /**
+         * Invoked by {@link RateLimitedDispatcher}.
+         * Should attach asyncResultCallback to asyncResult and invoke it when asyncResult is complete.
+         * @param asyncResult that will complete asynchronously
+         * @param asyncResultCallback should be invoked when asyncResult is complete
+         */
         void subscribe(AsyncResultT asyncResult, AsyncResultCallback asyncResultCallback);
     }
 
-    @SuppressWarnings({"unchecked"})
     private final class TaskProcessor implements Runnable {
-
         @Override
         public void run() {
             while (state.get() == State.RUNNING ||
-                    state.get() == State.SHUTTING_DOWN && !taskQueue.isEmpty()) {
+                    (state.get() == State.SHUTTING_DOWN && !taskQueue.isEmpty())) {
                 try {
                     processCommandsIfExist();
                     waitForTaskInQueueAndProcess();
@@ -240,18 +260,18 @@ public class RateLimitedDispatcher implements AutoCloseable {
             if (state.get() == State.TERMINATE) {
                 taskExceptionText = "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state";
             } else {
-                taskExceptionText = "RateLimitedDispatcher [" + name + "] was interrupted";
+                taskExceptionText = "RateLimitedDispatcher [" + name + "] interrupted";
             }
 
             taskQueue.forEach(task -> {
                 task.getFuture().completeExceptionally(new RejectedExecutionException(taskExceptionText));
-                task.getQueueWaitTime().close();
+                task.getQueueWaitTimeCall().close();
             });
 
         }
 
         private void processCommandsIfExist() throws InterruptedException{
-            for (ChangeWindowSizeCommand command = commandQueue.poll();
+            for (Command command = commandQueue.poll();
                  command != null;
                  command = commandQueue.poll()) {
 
@@ -266,7 +286,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
                 return;
             }
 
-            task.getQueueWaitTime().stop();
+            task.getQueueWaitTimeCall().stop();
             CompletableFuture future = task.getFuture();
 
             try {
@@ -320,12 +340,12 @@ public class RateLimitedDispatcher implements AutoCloseable {
         private final Supplier<T> supplier;
         private final CompletableFuture<T> future;
 
-        private final ProfiledCall queueWaitTime;
+        private final ProfiledCall queueWaitTimeCall;
 
-        public Task(CompletableFuture<T> future, Supplier<T> supplier, ProfiledCall queueWaitTime) {
+        public Task(CompletableFuture<T> future, Supplier<T> supplier, ProfiledCall queueWaitTimeCall) {
             this.future = future;
             this.supplier = supplier;
-            this.queueWaitTime = queueWaitTime;
+            this.queueWaitTimeCall = queueWaitTimeCall;
         }
 
         public Supplier<T> getSupplier() {
@@ -336,8 +356,8 @@ public class RateLimitedDispatcher implements AutoCloseable {
             return future;
         }
 
-        public ProfiledCall getQueueWaitTime() {
-            return queueWaitTime;
+        public ProfiledCall getQueueWaitTimeCall() {
+            return queueWaitTimeCall;
         }
     }
 
