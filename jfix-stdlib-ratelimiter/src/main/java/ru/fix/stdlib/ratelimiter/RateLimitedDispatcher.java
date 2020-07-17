@@ -13,6 +13,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
@@ -34,13 +36,17 @@ public class RateLimitedDispatcher implements AutoCloseable {
     private final String name;
     private final Profiler profiler;
 
+    private final Integer windowSize;
     private final DynamicProperty<Long> closingTimeout;
+
+    private final Semaphore windowSemaphore;
 
     /**
      * Creates new dispatcher instance
      *
      * @param name           name of dispatcher - will be used in metrics and worker's thread name
      * @param rateLimiter    rate limiter, which provides rate of operation
+     * @param windowSize
      * @param closingTimeout max amount of time (in milliseconds) for waiting pending operations.
      *                       If parameter equals 0 it means that operations was completed immediately.
      *                       Any negative number will be interpreted as 0.
@@ -48,10 +54,13 @@ public class RateLimitedDispatcher implements AutoCloseable {
     public RateLimitedDispatcher(String name,
                                  RateLimiter rateLimiter,
                                  Profiler profiler,
+                                 Integer windowSize,
                                  DynamicProperty<Long> closingTimeout) {
         this.name = name;
         this.rateLimiter = rateLimiter;
+        this.windowSize = windowSize;
         this.closingTimeout = closingTimeout;
+        this.windowSemaphore = new Semaphore(windowSize > 0 ? windowSize : 0);
 
         this.profiler = new PrefixedProfiler(profiler, "RateLimiterDispatcher." + name + ".");
 
@@ -63,8 +72,22 @@ public class RateLimitedDispatcher implements AutoCloseable {
         this.profiler.attachIndicator(QUEUE_SIZE_INDICATOR, () -> (long) queue.size());
     }
 
+    public RateLimitedDispatcher(String name,
+                                 RateLimiter rateLimiter,
+                                 Profiler profiler,
+                                 DynamicProperty<Long> closingTimeout) {
+        this(name, rateLimiter, profiler, -1, closingTimeout);
+    }
+
     public <T> CompletableFuture<T> compose(Supplier<CompletableFuture<T>> supplier) {
         return submit(supplier).thenComposeAsync(cf -> cf);
+    }
+
+    public <ListenableT> CompletableFuture<ListenableT> compose(
+            Supplier<ListenableT> resultSupplier,
+            AsyncResultSubscriber<ListenableT> resultSubscriber
+    ) {
+        return null; //TODO
     }
 
     /**
@@ -77,7 +100,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
      * @return feature which represent result of task execution
      */
     @SuppressWarnings({"unchecked"})
-    public <T> CompletableFuture<T> submit(Supplier<T> supplier) {
+    private <T> CompletableFuture<T> submit(Supplier<T> supplier) {
         CompletableFuture<T> result = new CompletableFuture<>();
 
         State state = this.state.get();
@@ -134,6 +157,19 @@ public class RateLimitedDispatcher implements AutoCloseable {
         profiler.detachIndicator(QUEUE_SIZE_INDICATOR);
     }
 
+    @FunctionalInterface
+    public interface AsyncResultListener {
+        /**
+         * Async operation is complete successfully or with exception.
+         */
+        void onAsyncResultCompleted();
+    }
+
+    @FunctionalInterface
+    public interface AsyncResultSubscriber<ListenableResultT> {
+        void subscribe(ListenableResultT asyncResult, AsyncResultListener asyncResultListener);
+    }
+
     @SuppressWarnings({"unchecked"})
     private final class TaskProcessor implements Runnable {
 
@@ -177,6 +213,20 @@ public class RateLimitedDispatcher implements AutoCloseable {
             CompletableFuture future = task.getFuture();
 
             try {
+                if (windowSize > 0) {
+                    try (ProfiledCall acquireWindowTime = profiler.start("acquire_window")) {
+                        boolean windowAcquired = false;
+                        while (state.get() != State.TERMINATE && !windowAcquired) {
+                            windowAcquired = windowSemaphore.tryAcquire(1, TimeUnit.SECONDS);
+                        }
+                        if (!windowAcquired) {
+                            rejectDueToTerminateState(future);
+                            return;
+                        }
+                        acquireWindowTime.stop();
+                    }
+                }
+
                 try (ProfiledCall limitAcquireTime = profiler.start("acquire_limit")) {
 
                     boolean acquired = false;
@@ -184,9 +234,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
                         acquired = rateLimiter.tryAcquire(1, ChronoUnit.SECONDS);
                     }
                     if (!acquired) {
-                        future.completeExceptionally(new RejectedExecutionException(
-                                "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state"
-                        ));
+                        rejectDueToTerminateState(future);
                         return;
                     }
                     limitAcquireTime.stop();
@@ -200,6 +248,12 @@ public class RateLimitedDispatcher implements AutoCloseable {
             } catch (Exception e) {
                 future.completeExceptionally(e);
             }
+        }
+
+        private void rejectDueToTerminateState(CompletableFuture<?> future) {
+            future.completeExceptionally(new RejectedExecutionException(
+                    "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state"
+            ));
         }
     }
 
