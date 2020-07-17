@@ -3,6 +3,7 @@ package ru.fix.stdlib.ratelimiter
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.doubles.shouldBeBetween
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -17,6 +18,8 @@ import org.junit.jupiter.api.parallel.ExecutionMode
 import org.slf4j.LoggerFactory
 import ru.fix.aggregating.profiler.AggregatingProfiler
 import ru.fix.aggregating.profiler.NoopProfiler
+import ru.fix.aggregating.profiler.Profiler
+import ru.fix.aggregating.profiler.ProfilerReport
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.lang.Thread.sleep
 import java.time.Duration
@@ -103,34 +106,57 @@ class RateLimitedDispatcherTest {
         dispatcher.close()
     }
 
+
     @Test
     fun `if windows size is 0, then restricted only by limiter `() {
-        `async operations are restricted by limiter limit`(0)
+        `async operations are restricted by limiter limit `(0)
     }
+
 
     @Test
     fun `if window size is not empty and quite big, restricted by limiter`() {
-        `async operations are restricted by limiter limit`(100_000)
+        `async operations are restricted by limiter limit `(100_000)
     }
 
+    private fun `async operations are restricted by limiter limit `(windowSize: Int) {
+        val RATE_PER_SECOND = 500
+        val ITERATIONS = 5 * RATE_PER_SECOND
 
-    private fun `async operations are restricted by limiter limit`(windowSize: Int) {
+        val report = `submit series of operations`(
+                ratePerSecond = RATE_PER_SECOND,
+                interations = ITERATIONS,
+                windowSize = 0)
 
-        val RATE_REQ_PER_SECOND = 500
-        val ITERATIONS = 5 * RATE_REQ_PER_SECOND
+        val operationReport = report.profilerCallReports.single { it.identity.name == "operation" }
+
+        logger.info("Throughput " + operationReport.stopThroughputAvg)
+        operationReport.stopThroughputAvg.shouldBeBetween(
+                RATE_PER_SECOND.toDouble(),
+                RATE_PER_SECOND.toDouble(),
+                RATE_PER_SECOND.toDouble() * 0.25)
+    }
+
+    private fun `submit series of operations`(
+            ratePerSecond: Int,
+            interations: Int,
+            windowSize: Int): ProfilerReport {
+
+
+        val profiler = AggregatingProfiler()
 
         val dispatcher = createDispatcher(
-                rateLimitRequestPerSecond = RATE_REQ_PER_SECOND,
-                window = windowSize
+                rateLimitRequestPerSecond = ratePerSecond,
+                window = windowSize,
+                profiler = profiler
         )
 
         val counter = AtomicInteger(0)
 
-        val profiler = AggregatingProfiler()
+
         val profilerReporter = profiler.createReporter()
         val profiledCall = profiler.profiledCall("operation")
 
-        val features = List(ITERATIONS) {
+        val features = List(interations) {
             dispatcher.compose {
                 profiledCall.profile<CompletableFuture<Int>> {
                     completedFuture(counter.incrementAndGet())
@@ -138,24 +164,16 @@ class RateLimitedDispatcherTest {
             }
         }
 
-        logger.info("Submit $ITERATIONS operations.")
+        logger.info("Submit $interations operations.")
         features.forEach { it.join() }
 
-        counter.get().shouldBe(ITERATIONS)
+        counter.get().shouldBe(interations)
+        features.map { it.join() }.toSet().containsAll((1..interations).toList())
 
-        val report = profilerReporter.buildReportAndReset().profilerCallReports[0]
-
-        features.map { it.join() }.toSet().containsAll((1..ITERATIONS).toList())
-
-        logger.info("Throughput " + report.stopThroughputAvg)
-
-        report.stopThroughputAvg.shouldBeBetween(
-                RATE_REQ_PER_SECOND.toDouble(),
-                RATE_REQ_PER_SECOND.toDouble(),
-                RATE_REQ_PER_SECOND.toDouble() * 0.25)
-
-
+        val report = profilerReporter.buildReportAndReset()
         dispatcher.close()
+
+        return report;
     }
 
 
@@ -193,37 +211,37 @@ class RateLimitedDispatcherTest {
         dispatcher.close()
     }
 
-
-    @Disabled("TODO")
     @Test
-    fun `'queue_size' indicator shows unprocessed pending requests in queue`() {
+    fun `'queue_wait', 'acquire_limit', 'acquire_window', 'supplied_operation', 'queue_size'  metrics gathered during execution`() {
+
+        val RATE_PER_SECOND = 500
+        val ITERATIONS = 5 * RATE_PER_SECOND
+
+        val report = `submit series of operations`(
+                ratePerSecond = RATE_PER_SECOND,
+                interations = ITERATIONS,
+                windowSize = 100)
+
+        val metricNamePrefix = "RateLimiterDispatcher.dispatcher-name"
+
+        report.profilerCallReports.single { it.identity.name == "$metricNamePrefix.queue_wait" }
+                .stopSum.shouldBe(ITERATIONS)
+
+        report.profilerCallReports.single { it.identity.name == "$metricNamePrefix.acquire_window" }
+                .stopSum.shouldBe(ITERATIONS)
+
+        report.profilerCallReports.single { it.identity.name == "$metricNamePrefix.acquire_limit" }
+                .stopSum.shouldBe(ITERATIONS)
+
+        report.profilerCallReports.single { it.identity.name == "$metricNamePrefix.supplied_operation" }
+                .stopSum.shouldBe(ITERATIONS)
+
+        report.indicators.map { it.key.name }.shouldContain("$metricNamePrefix.queue_size")
+
+        logger.info(report.toString())
 
     }
 
-    @Disabled("TODO")
-    @Test
-    fun `'queue_wait' metric shows time span between enqueueing and dequeueing`() {
-
-    }
-
-    @Disabled("TODO")
-    @Test
-    fun `'acquire_limit' metric shows how long it took to pass rate limit restriction`() {
-
-    }
-
-    @Disabled("TODO")
-    @Test
-    fun `'acquire_window' metric shows how long it took to pass window size restriction`() {
-
-    }
-
-
-    @Disabled("TODO")
-    @Test
-    fun `metric shows queue-wait`() {
-
-    }
 
     @Disabled("TODO")
     @Test
@@ -314,11 +332,12 @@ class RateLimitedDispatcherTest {
     private fun createDispatcher(
             rateLimitRequestPerSecond: Int = 500,
             window: Int = 0,
-            closingTimeout: Int = 5000) =
+            closingTimeout: Int = 5000,
+            profiler: Profiler = NoopProfiler()) =
             RateLimitedDispatcher(
                     "dispatcher-name",
                     ConfigurableRateLimiter("rate-limiter-name", rateLimitRequestPerSecond),
-                    NoopProfiler(),
+                    profiler,
                     window,
                     DynamicProperty.of(closingTimeout.toLong())
             )
