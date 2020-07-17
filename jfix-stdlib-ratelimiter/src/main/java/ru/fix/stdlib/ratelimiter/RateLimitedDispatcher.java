@@ -46,7 +46,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
      *
      * @param name           name of dispatcher - will be used in metrics and worker's thread name
      * @param rateLimiter    rate limiter, which provides rate of operation
-     * @param windowSize
+     * @param windowSize     max amount of concurrently executing tasks
      * @param closingTimeout max amount of time (in milliseconds) for waiting pending operations.
      *                       If parameter equals 0 it means that operations was completed immediately.
      *                       Any negative number will be interpreted as 0.
@@ -80,7 +80,10 @@ public class RateLimitedDispatcher implements AutoCloseable {
     }
 
     public <T> CompletableFuture<T> compose(Supplier<CompletableFuture<T>> supplier) {
-        return submit(supplier).thenComposeAsync(cf -> cf);
+        return submit(
+                () -> supplier.get()
+                        .whenComplete((t, throwable) -> windowSemaphore.release())
+        ).thenComposeAsync(cf -> cf);
     }
 
     public <AsyncResultT> CompletableFuture<AsyncResultT> compose(
@@ -89,7 +92,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
     ) {
         return submit(() -> {
             AsyncResultT asyncResult = asyncOperation.invoke();
-            asyncResultSubscriber.subscribe(asyncResult, () -> windowSemaphore.release());
+            asyncResultSubscriber.subscribe(asyncResult, windowSemaphore::release);
             return asyncResult;
         });
     }
