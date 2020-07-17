@@ -1,5 +1,6 @@
 package ru.fix.stdlib.ratelimiter
 
+import io.kotest.matchers.booleans.shouldBeTrue
 import org.hamcrest.MatcherAssert.assertThat
 import org.hamcrest.Matchers.lessThanOrEqualTo
 import org.junit.jupiter.api.Assertions.*
@@ -16,6 +17,90 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
 
 class RateLimitedDispatcherTest {
+
+    @Test
+    fun `submit async operation with user defined async result`(){
+
+        class UserAsyncResult(){
+            fun whenComplete(callback: ()->Unit){
+
+            }
+        }
+
+        val dispatcher = RateLimitedDispatcher(
+                "dispatcher-name",
+                 ConfigurableRateLimiter("rate-limiter-name", 100),
+                NoopProfiler(),
+                DynamicProperty.of(5_000)
+        )
+
+        val USER_ASYNC_RESULT = UserAsyncResult()
+        fun userAsyncOperation(): UserAsyncResult {
+            return USER_ASYNC_RESULT
+        }
+
+        val deleyedSubmission = dispatcher.submit(
+                { userAsyncOperation() },
+                { asyncResult, callback -> asyncResult.whenComplete( { callback()} ) }
+        )
+
+        (USER_ASYNC_RESULT === deleyedSubmission.get()).shouldBeTrue()
+
+    }
+
+    @Test
+    fun `'queue_size' indicator shows unprocessed pending requests in queue`(){
+
+    }
+
+    @Test
+    fun `'queue_wait' metric shows time span between enqueueing and dequeueing`(){
+
+    }
+
+    @Test
+    fun `'acquire_limit' metric shows how long it took to pass rate limit restriction`(){
+
+    }
+
+    @Test
+    fun `'acquire_window' metric shows how long it took to pass window size restriction`(){
+
+    }
+
+
+    @Test
+    fun `metric shows queue-wait`(){
+
+    }
+
+
+    @Test
+    fun `submit async operation with CompletableFuture result`(){
+
+    }
+
+
+
+
+    @Test
+    fun `if windows size is empty, then restricted only by limiter `(){
+    }
+
+    @Test
+    fun `if window size is not empty, still restricted by limiter`(){
+    }
+
+    @Test
+    fun `window blocks number of uncompleted operations `(){
+    }
+
+
+
+
+
+
+
 
     @Test
     fun testSubmitIncrementThroughput() {
