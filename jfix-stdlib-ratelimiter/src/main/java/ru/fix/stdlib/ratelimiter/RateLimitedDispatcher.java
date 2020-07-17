@@ -166,7 +166,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
 
     @FunctionalInterface
-    interface AsyncOperation<AsyncResultT> {
+    public interface AsyncOperation<AsyncResultT> {
         AsyncResultT invoke();
     }
 
