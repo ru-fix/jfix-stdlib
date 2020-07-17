@@ -229,12 +229,12 @@ public class RateLimitedDispatcher implements AutoCloseable {
                 if (windowSize > 0) {
                     try (ProfiledCall acquireWindowTime = profiler.start("acquire_window")) {
                         boolean windowAcquired = false;
-                        while (state.get() != State.TERMINATE && !windowAcquired) {
+                        while (!windowAcquired) {
+                            if (state.get() == State.TERMINATE) {
+                                rejectDueToTerminateState(future);
+                                return;
+                            }
                             windowAcquired = windowSemaphore.tryAcquire(1, TimeUnit.SECONDS);
-                        }
-                        if (!windowAcquired) {
-                            rejectDueToTerminateState(future);
-                            return;
                         }
                         acquireWindowTime.stop();
                     }
@@ -242,13 +242,13 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
                 try (ProfiledCall limitAcquireTime = profiler.start("acquire_limit")) {
 
-                    boolean acquired = false;
-                    while (state.get() != State.TERMINATE && !acquired) {
-                        acquired = rateLimiter.tryAcquire(1, ChronoUnit.SECONDS);
-                    }
-                    if (!acquired) {
-                        rejectDueToTerminateState(future);
-                        return;
+                    boolean limitAcquired = false;
+                    while (!limitAcquired) {
+                        if (state.get() == State.TERMINATE) {
+                            rejectDueToTerminateState(future);
+                            return;
+                        }
+                        limitAcquired = rateLimiter.tryAcquire(1, ChronoUnit.SECONDS);
                     }
                     limitAcquireTime.stop();
                 }
