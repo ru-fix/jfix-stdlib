@@ -99,13 +99,23 @@ class RateLimitedDispatcherTest {
 
     @Test
     fun `if windows size is 0, then restricted only by limiter `() {
+        `async operations are restricted by limiter limit`(0)
+    }
+
+    @Test
+    fun `if window size is not empty and quite big, restricted by limiter`() {
+        `async operations are restricted by limiter limit`(100_000)
+    }
+
+
+    private fun `async operations are restricted by limiter limit`(windowSize: Int) {
 
         val RATE_REQ_PER_SECOND = 500
         val ITERATIONS = 5 * RATE_REQ_PER_SECOND
 
         val dispatcher = createDispatcher(
                 rateLimitRequestPerSecond = RATE_REQ_PER_SECOND,
-                window = 0
+                window = windowSize
         )
 
         val counter = AtomicInteger(0)
@@ -142,10 +152,7 @@ class RateLimitedDispatcherTest {
         dispatcher.close()
     }
 
-    @Test
-    fun `if window size is not empty and quite big, restricted by limiter`() {
 
-    }
 
     @Test
     fun `window blocks number of uncompleted operations `() {
