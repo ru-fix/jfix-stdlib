@@ -245,9 +245,9 @@ public class RateLimitedDispatcher implements AutoCloseable {
                     boolean limitAcquired = false;
                     while (!limitAcquired) {
                         if (state.get() == State.TERMINATE) {
-                            rejectDueToTerminateState(future);
-                            return;
-                        }
+                                rejectDueToTerminateState(future);
+                                return;
+                            }
                         limitAcquired = rateLimiter.tryAcquire(1, ChronoUnit.SECONDS);
                     }
                     limitAcquireTime.stop();

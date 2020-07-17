@@ -4,6 +4,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.doubles.shouldBeBetween
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Disabled
@@ -84,10 +85,14 @@ class RateLimitedDispatcherTest {
 
         val delayedSubmissionFuture = dispatcher.compose { userAsyncOperation() }
 
-        delayedSubmissionFuture.isCompletedExceptionally.shouldBeTrue()
+        await().atMost(Duration.ofSeconds(10)).until {
+            delayedSubmissionFuture.isCompletedExceptionally
+        }
+
         val actualException = shouldThrow<Exception> { delayedSubmissionFuture.get() }
 
-        actualException.shouldBe(asyncOperationException)
+        actualException.cause.shouldNotBeNull()
+        actualException.cause.shouldBe(asyncOperationException)
 
         dispatcher.close()
     }
