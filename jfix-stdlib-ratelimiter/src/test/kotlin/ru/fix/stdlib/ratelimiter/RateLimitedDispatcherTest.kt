@@ -10,6 +10,7 @@ import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.assertTimeoutPreemptively
 import org.junit.jupiter.api.parallel.Execution
 import org.junit.jupiter.api.parallel.ExecutionMode
 import org.slf4j.LoggerFactory
@@ -19,6 +20,8 @@ import ru.fix.dynamic.property.api.DynamicProperty
 import java.lang.Thread.sleep
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletableFuture.completedFuture
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -60,7 +63,7 @@ class RateLimitedDispatcherTest {
 
         val operationResult = Object()
         fun userAsyncOperation(): CompletableFuture<Any> {
-            return CompletableFuture.completedFuture(operationResult)
+            return completedFuture(operationResult)
         }
 
         val delayedSubmissionFuture = dispatcher.compose { userAsyncOperation() }
@@ -78,7 +81,7 @@ class RateLimitedDispatcherTest {
         val asyncOperationException = Exception("some error")
 
         fun userAsyncOperation(): CompletableFuture<Any> {
-            return CompletableFuture<Any>().apply{
+            return CompletableFuture<Any>().apply {
                 completeExceptionally(asyncOperationException)
             }
         }
@@ -127,7 +130,7 @@ class RateLimitedDispatcherTest {
         val features = List(ITERATIONS) {
             dispatcher.compose {
                 profiledCall.profile<CompletableFuture<Int>> {
-                    CompletableFuture.completedFuture(counter.incrementAndGet())
+                    completedFuture(counter.incrementAndGet())
                 }
             }
         }
@@ -153,7 +156,6 @@ class RateLimitedDispatcherTest {
     }
 
 
-
     @Test
     fun `window blocks number of uncompleted operations `() {
 
@@ -170,7 +172,7 @@ class RateLimitedDispatcherTest {
 
         val asyncOperationSubmissionResult = dispatcher.compose {
             asyncOperationIsInvoked.set(true)
-            CompletableFuture.completedFuture(11)
+            completedFuture(11)
         }
 
         sleep(3000)
@@ -232,61 +234,44 @@ class RateLimitedDispatcherTest {
     }
 
 
-//
-//
-//    @Test
-//    fun testSubmitIncrementThroughput() {
-//        createDispatcher(2000).use {
-//            assertTimeoutPreemptively(Duration.ofSeconds(15)) {
-//                testThroughput { call, counter -> submitIncrement(it, call, counter) }
-//            }
-//        }
-//    }
-//
-//    @Test
-//    fun testComposeIncrementThroughput() {
-//        createDispatcher(2000).use {
-//            assertTimeoutPreemptively(Duration.ofSeconds(15)) {
-//                testThroughput { call, counter -> composeIncrement(it, call, counter) }
-//            }
-//        }
-//    }
-//
     /**
      * When dispatcher closingTimeout is enough for pending tasks to complete
      * such tasks will complete normally
      */
-//    @Test
-//    fun `on shutdown fast tasks complete normally`() {
-//
-//        val dispatch = createDispatcher(closingTimeout = 5_000)
-//
-//            assertTimeoutPreemptively(Duration.ofSeconds(10)) {
-//
-//                val blockingTaskIsStarted = CountDownLatch(1)
-//
-//
-//                dispatch.submit {
-//                    blockingTaskIsStarted.countDown()
-//                    //Due to blocking nature of dispatch.close we hae to use sleep
-//                    Thread.sleep(1000)
-//                }
-//                val futures = List(3) {
-//                    dispatch.submit { }
-//                }
-//
-//                blockingTaskIsStarted.await()
-//                dispatch.close()
-//
-//                CompletableFuture.allOf(*futures.toTypedArray()).exceptionally { null }.join()
-//
-//                futures.forEach { future: CompletableFuture<*> ->
-//                    assertTrue(future.isDone)
-//                    assertFalse(future.isCompletedExceptionally)
-//                }
-//            }
-//        }
-//    }
+    @Test
+    fun `on shutdown fast tasks complete normally`() {
+
+        val dispatch = createDispatcher(closingTimeout = 5_000)
+
+        assertTimeoutPreemptively(Duration.ofSeconds(10)) {
+
+            val blockingTaskIsStarted = CountDownLatch(1)
+
+
+            dispatch.compose {
+                blockingTaskIsStarted.countDown()
+                //Due to blocking nature of dispatch.close we hae to use sleep
+                Thread.sleep(1000)
+                completedFuture(true)
+            }
+
+            val futures = List(3) {
+                dispatch.compose {
+                    completedFuture(true)
+                }
+            }
+
+            blockingTaskIsStarted.await()
+            dispatch.close()
+
+            CompletableFuture.allOf(*futures.toTypedArray()).exceptionally { null }.join()
+
+            futures.forEach { future: CompletableFuture<*> ->
+                future.isDone.shouldBeTrue()
+                future.isCompletedExceptionally.shouldBeFalse()
+            }
+        }
+    }
 
 //    @Test
 //    fun shutdown_tasksNotCompletedInTimeout_areCompletedExceptionally() {
@@ -329,62 +314,5 @@ class RateLimitedDispatcherTest {
                     window,
                     DynamicProperty.of(closingTimeout.toLong())
             )
-
-//
-//
-//    private fun testThroughput(biFunction: (ProfiledCall, AtomicInteger) -> CompletableFuture<Int>) {
-//
-//
-//
-//
-//        val counter = AtomicInteger(0)
-//        val profiler = AggregatingProfiler()
-//        val profilerReporter = profiler.createReporter()
-//
-//        profilerReporter.buildReportAndReset()
-//        val profiledCall = profiler.profiledCall(RateLimitedDispatcher::class.toString())
-//
-//        val features = List(ITERATIONS) {
-//            biFunction.invoke(profiledCall, counter)
-//        }
-//
-//        CompletableFuture.allOf(*features.toTypedArray()).join()
-//        val report = profilerReporter.buildReportAndReset().profilerCallReports[0]
-//
-//        val results = features
-//                .map { it.join() }
-//
-//        for (i in 0 until ITERATIONS) {
-//            assertTrue(results.contains(i))
-//        }
-//
-//        logger.info("Current throughput " + report.stopThroughputAvg)
-//
-//        assertThat(report.stopThroughputAvg, lessThanOrEqualTo((RATE_LIMIT * 1.25 * 1000.toDouble())))
-//
-//
-//        assertEquals(ITERATIONS, counter.get())
-//    }
-//
-//    private fun submitIncrement(dispatcher: RateLimitedDispatcher,
-//                                call: ProfiledCall,
-//                                counter: AtomicInteger): CompletableFuture<Int> {
-//        return dispatcher.submit {
-//            call.profile<Int> {
-//                counter.getAndIncrement()
-//            }
-//        }
-//    }
-//
-//    private fun composeIncrement(dispatcher: RateLimitedDispatcher,
-//                                 call: ProfiledCall,
-//                                 counter: AtomicInteger): CompletableFuture<Int> {
-//        return dispatcher.compose {
-//            call.profile<CompletableFuture<Int>> {
-//                CompletableFuture.supplyAsync { counter.getAndIncrement() }
-//            }
-//        }
-//    }
-
 
 }
