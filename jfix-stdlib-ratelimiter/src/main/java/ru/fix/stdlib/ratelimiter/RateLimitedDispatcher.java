@@ -234,7 +234,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
                                 rejectDueToTerminateState(future);
                                 return;
                             }
-                            windowAcquired = windowSemaphore.tryAcquire(1, TimeUnit.SECONDS);
+                            windowAcquired = windowSemaphore.tryAcquire(5, TimeUnit.SECONDS);
                         }
                         acquireWindowTime.stop();
                     }
@@ -248,7 +248,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
                                 rejectDueToTerminateState(future);
                                 return;
                             }
-                        limitAcquired = rateLimiter.tryAcquire(1, ChronoUnit.SECONDS);
+                        limitAcquired = rateLimiter.tryAcquire(5, ChronoUnit.SECONDS);
                     }
                     limitAcquireTime.stop();
                 }
