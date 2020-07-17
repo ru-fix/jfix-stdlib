@@ -39,7 +39,7 @@ class RateLimitedDispatcherTest {
             return USER_ASYNC_RESULT
         }
 
-        val deleyedSubmission = dispatcher.submit(
+        val deleyedSubmission = dispatcher.compose(
                 { userAsyncOperation() },
                 { asyncResult, callback -> asyncResult.whenComplete( { callback()} ) }
         )
