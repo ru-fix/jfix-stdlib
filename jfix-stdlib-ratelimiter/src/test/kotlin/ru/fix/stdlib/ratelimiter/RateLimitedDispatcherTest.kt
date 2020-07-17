@@ -9,7 +9,6 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.awaitility.Awaitility.await
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertTimeoutPreemptively
@@ -24,11 +23,13 @@ import ru.fix.dynamic.property.api.AtomicProperty
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.lang.Thread.sleep
 import java.time.Duration
-import java.util.concurrent.*
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletableFuture.completedFuture
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicIntegerArray
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 @Execution(ExecutionMode.CONCURRENT)
@@ -177,23 +178,21 @@ class RateLimitedDispatcherTest {
 
 
     @Test
-    fun `window blocks number of uncompleted operations `() {
+    fun `when window of uncompleted operations is full no new operation is dispatched`() {
         val dispatcher = TrackableDispatcher()
         dispatcher.windowProperty.set(10)
 
-        dispatcher.submitNTasks(10)
-        dispatcher.submitNTasks(1)
+        dispatcher.submitTasks(1..11)
 
-        sleep(3000)
+        sleep(4000)
 
-        for(task in 0..9)
-            dispatcher.isSubmittedTaskInvoked(task).shouldBeTrue()
-        dispatcher.isSubmittedTaskInvoked(10).shouldBeFalse()
+        dispatcher.isSubmittedTaskInvoked(1..10).shouldBeTrue()
+        dispatcher.isSubmittedTaskInvoked(11).shouldBeFalse()
 
         dispatcher.completeTask(4)
 
         await().atMost(Duration.ofSeconds(10)).until {
-            dispatcher.isSubmittedTaskInvoked(10)
+            dispatcher.isSubmittedTaskInvoked(11)
         }
 
         dispatcher.completeAllAndClose()
@@ -233,28 +232,24 @@ class RateLimitedDispatcherTest {
 
 
     @Test
-    fun `increasing window size allows to submit new operations immediately up to the new limit`() {
-        
+    fun `increasing window size allows to submit new operations up to the new limit`() {
+
         val trackableDispatcher = TrackableDispatcher()
         trackableDispatcher.windowProperty.set(10)
 
-        trackableDispatcher.submitNTasks(11)
+        trackableDispatcher.submitTasks(1..11)
 
-        sleep(3000)
-        for(task in 0..9)
-            trackableDispatcher.isSubmittedTaskInvoked(task).shouldBeTrue()
-        trackableDispatcher.isSubmittedTaskInvoked(10).shouldBeFalse()
+        sleep(4000)
+        trackableDispatcher.isSubmittedTaskInvoked(1..10).shouldBeTrue()
+        trackableDispatcher.isSubmittedTaskInvoked(11).shouldBeFalse()
 
         trackableDispatcher.windowProperty.set(11)
 
-        trackableDispatcher.submitNTasks(1)
-        trackableDispatcher.completeTask(0)
-
+        trackableDispatcher.submitTask(12)
+        trackableDispatcher.completeTask(1)
 
         await().atMost(Duration.ofSeconds(10)).until {
-            (0..11).map { task ->
-                trackableDispatcher.isSubmittedTaskInvoked(task)
-            }.reduce { acc, value -> acc and value }
+            trackableDispatcher.isSubmittedTaskInvoked(1..12)
         }
 
         trackableDispatcher.completeAllAndClose();
@@ -262,35 +257,29 @@ class RateLimitedDispatcherTest {
 
 
     @Test
-    fun `decreasing window size reduce limit`() {
-
+    fun `decreasing window size reduces limit`() {
         val trackableDispatcher = TrackableDispatcher()
         trackableDispatcher.windowProperty.set(10)
 
-        trackableDispatcher.submitNTasks(10)
+        trackableDispatcher.submitTasks(1..10)
 
         sleep(4000)
-        for(task in 0..9)
-            trackableDispatcher.isSubmittedTaskInvoked(task).shouldBeTrue()
+        trackableDispatcher.isSubmittedTaskInvoked(1..10).shouldBeTrue()
+        trackableDispatcher.completeTask(1..10)
 
-        trackableDispatcher.completeTask(0..9)
-
-
-        trackableDispatcher.windowProperty.set(5)
-        trackableDispatcher.submitNTasks(6)
+        trackableDispatcher.windowProperty.set(4)
+        trackableDispatcher.submitTasks(11..15)
         sleep(4000)
-        for(task in 10..14)
-            trackableDispatcher.isSubmittedTaskInvoked(task).shouldBeTrue()
+
+        trackableDispatcher.isSubmittedTaskInvoked(11..14).shouldBeTrue()
         trackableDispatcher.isSubmittedTaskInvoked(15).shouldBeFalse()
 
-        trackableDispatcher.completeTask(10)
-
+        trackableDispatcher.completeTask(11)
         await().atMost(Duration.ofSeconds(10)).until {
             trackableDispatcher.isSubmittedTaskInvoked(15)
         }
 
         trackableDispatcher.completeAllAndClose();
-
     }
 
 
@@ -381,45 +370,48 @@ class RateLimitedDispatcherTest {
                     DynamicProperty.of(closingTimeout.toLong())
             )
 
-    inner class TrackableDispatcher{
+    inner class TrackableDispatcher {
         val windowProperty = AtomicProperty(0)
         val dispatcher = createDispatcher(window = windowProperty)
-        val submittedTasksResults = ArrayList<CompletableFuture<Int>>()
-        val isSubmittedTaskInvoked = ArrayList<AtomicBoolean>()
+        val submittedTasksResults = HashMap<Int, CompletableFuture<Any?>>()
+        val isSubmittedTaskInvoked = HashMap<Int, AtomicBoolean>()
 
-        fun submitNTasks(count: Int) {
-            repeat(count){
-                val index = submittedTasksResults.size
-                val future = CompletableFuture<Int>()
+        fun submitTasks(tasks: IntRange) {
+            for (task in tasks) {
+                submitTask(task)
+            }
+        }
 
-                submittedTasksResults.add(future)
-                isSubmittedTaskInvoked.add(AtomicBoolean(false))
+        fun submitTask(task: Int) {
+            val future = CompletableFuture<Any?>()
+            submittedTasksResults[task] = future
+            isSubmittedTaskInvoked[task] = AtomicBoolean(false)
 
-                dispatcher.compose {
-                    isSubmittedTaskInvoked[index].set(true)
-                    future
-                }
+            dispatcher.compose {
+                isSubmittedTaskInvoked[task]!!.set(true)
+                future
             }
         }
 
         fun completeTask(index: Int) {
-            submittedTasksResults[index].complete(index)
+            submittedTasksResults[index]!!.complete(index)
         }
+
         fun completeTask(range: IntRange) {
-            for(task in range) {
-                submittedTasksResults[task].complete(task)
+            for (task in range) {
+                submittedTasksResults[task]!!.complete(task)
             }
         }
 
-        fun isSubmittedTaskInvoked(index: Int) = isSubmittedTaskInvoked[index].get()
+        fun isSubmittedTaskInvoked(index: Int) = isSubmittedTaskInvoked[index]!!.get()
+        fun isSubmittedTaskInvoked(range: IntRange) = range.all { isSubmittedTaskInvoked[it]!!.get() }
 
         fun completeAllAndClose() {
-            submittedTasksResults.forEachIndexed { index, future -> future.complete(index) }
+            submittedTasksResults.forEach { (_, future) -> future.complete(true) }
 
             await().atMost(Duration.ofSeconds(10)).until {
-                isSubmittedTaskInvoked.filter { it.get() == false }.isEmpty()
+                isSubmittedTaskInvoked.all { it.value.get() }
             }
-
             dispatcher.close()
         }
 
