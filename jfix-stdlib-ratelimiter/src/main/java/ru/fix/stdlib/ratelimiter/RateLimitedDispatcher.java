@@ -93,11 +93,18 @@ public class RateLimitedDispatcher implements AutoCloseable {
         });
     }
 
-    private void asyncOperationStarted(){
+    public RateLimitedDispatcher(String name,
+                                 RateLimiter rateLimiter,
+                                 Profiler profiler,
+                                 DynamicProperty<Long> closingTimeout) {
+        this(name, rateLimiter, profiler, DynamicProperty.of(0), closingTimeout);
+    }
+
+    private void asyncOperationStarted() {
         activeAsyncOperations.incrementAndGet();
     }
 
-    private void asyncOperationCompleted(){
+    private void asyncOperationCompleted() {
         activeAsyncOperations.decrementAndGet();
         windowSemaphore.release();
     }
@@ -105,13 +112,6 @@ public class RateLimitedDispatcher implements AutoCloseable {
     private void submitCommand(Command command) {
         commandQueue.add(command);
         taskQueue.add(new AwakeFromWaitingQueueTask());
-    }
-
-    public RateLimitedDispatcher(String name,
-                                 RateLimiter rateLimiter,
-                                 Profiler profiler,
-                                 DynamicProperty<Long> closingTimeout) {
-        this(name, rateLimiter, profiler, DynamicProperty.of(0), closingTimeout);
     }
 
     public <T> CompletableFuture<T> compose(Supplier<CompletableFuture<T>> supplier) {
@@ -232,7 +232,8 @@ public class RateLimitedDispatcher implements AutoCloseable {
         /**
          * Invoked by {@link RateLimitedDispatcher}.
          * Should attach asyncResultCallback to asyncResult and invoke it when asyncResult is complete.
-         * @param asyncResult that will complete asynchronously
+         *
+         * @param asyncResult         that will complete asynchronously
          * @param asyncResultCallback should be invoked when asyncResult is complete
          */
         void subscribe(AsyncResultT asyncResult, AsyncResultCallback asyncResultCallback);
@@ -270,7 +271,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
         }
 
-        private void processCommandsIfExist() throws InterruptedException{
+        private void processCommandsIfExist() throws InterruptedException {
             for (Command command = commandQueue.poll();
                  command != null;
                  command = commandQueue.poll()) {
@@ -309,9 +310,9 @@ public class RateLimitedDispatcher implements AutoCloseable {
                     boolean limitAcquired = false;
                     while (!limitAcquired) {
                         if (state.get() == State.TERMINATE) {
-                                rejectDueToTerminateState(future);
-                                return;
-                            }
+                            rejectDueToTerminateState(future);
+                            return;
+                        }
                         limitAcquired = rateLimiter.tryAcquire(3, ChronoUnit.SECONDS);
                     }
                     limitAcquireTime.stop();
@@ -367,7 +368,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
         }
     }
 
-    interface Command{
+    private interface Command{
         void apply() throws InterruptedException;
     }
 
@@ -382,14 +383,15 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
         @Override
         public void apply() throws InterruptedException {
-            if(newSize == oldSize)
+            if (newSize == oldSize)
                 return;
 
             windowSize = newSize;
-            if(newSize > oldSize)
+            if (newSize > oldSize) {
                 windowSemaphore.release(newSize - oldSize);
-            else
+            } else {
                 windowSemaphore.acquire(oldSize - newSize);
+            }
         }
     }
 
