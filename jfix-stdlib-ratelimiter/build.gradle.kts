@@ -22,4 +22,6 @@ dependencies {
 
     testRuntimeOnly(Libs.slf4j_simple)
     testImplementation(Libs.kotlin_logging)
+    testImplementation(Libs.kotest_assertions)
+
 }

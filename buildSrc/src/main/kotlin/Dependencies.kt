@@ -56,6 +56,7 @@ object Libs {
     const val nexus_publish_plugin = "de.marcphilipp.nexus-publish"
 
     const val awaitility = "org.awaitility:awaitility:4.0.1"
+    const val kotest_assertions = "io.kotest:kotest-assertions-core:4.1.1"
 }
 
 

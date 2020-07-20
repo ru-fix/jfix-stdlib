@@ -7,51 +7,76 @@ import ru.fix.aggregating.profiler.PrefixedProfiler;
 import ru.fix.aggregating.profiler.ProfiledCall;
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
+import ru.fix.dynamic.property.api.PropertySubscription;
 
 import java.lang.invoke.MethodHandles;
 import java.time.temporal.ChronoUnit;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 /**
- * Dispatcher class which manages tasks execution with given rate. Queues and
- * executes all task in single processor thread.
+ * Manages tasks execution with given rate and window.
+ * Rate specify how many requests per second will be dispatched.
+ * Window size specify how many async operations with uncompleted result allowed.
+ * When Window or Rate restriction is reached, dispatcher will stop to process requests and enqueue them in umbound queue.
+ * Disaptcher executes all operations in single dedicated thread.
  */
 public class RateLimitedDispatcher implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
     private static final String QUEUE_SIZE_INDICATOR = "queue_size";
+    private static final String ACTIVE_ASYNC_OPERATIONS = "active_async_operations";
 
     private final AtomicReference<State> state = new AtomicReference<>();
 
     private final RateLimiter rateLimiter;
-    private final LinkedBlockingQueue<Task> queue = new LinkedBlockingQueue<>();
-    private final Thread thread;
+    private final LinkedBlockingQueue<Task> taskQueue = new LinkedBlockingQueue<>();
+    private final LinkedBlockingQueue<Command> commandQueue = new LinkedBlockingQueue<>();
 
+    private final Thread thread;
     private final String name;
     private final Profiler profiler;
 
+    /**
+     * Accessed only by single dedicated thread
+     */
+    private int windowSize = 0;
     private final DynamicProperty<Long> closingTimeout;
+
+    private final Semaphore windowSemaphore;
+    private final PropertySubscription<Integer> windowSizeSubscription;
+
+    /**
+     * How many async operations executed but their results are not ready yet.
+     */
+    private final AtomicInteger activeAsyncOperations = new AtomicInteger();
+
 
     /**
      * Creates new dispatcher instance
      *
      * @param name           name of dispatcher - will be used in metrics and worker's thread name
      * @param rateLimiter    rate limiter, which provides rate of operation
-     * @param closingTimeout max amount of time (in milliseconds) for waiting pending operations.
-     *                       If parameter equals 0 it means that operations was completed immediately.
+     * @param windowSize     ho many async operations with uncompleted result are allowed in dispatcher
+     * @param closingTimeout max amount of time (in milliseconds) to wait for pending operations during shutdown.
+     *                       If parameter equals 0 then dispatcher will not wait pending operations during closing process.
      *                       Any negative number will be interpreted as 0.
      */
     public RateLimitedDispatcher(String name,
                                  RateLimiter rateLimiter,
                                  Profiler profiler,
+                                 DynamicProperty<Integer> windowSize,
                                  DynamicProperty<Long> closingTimeout) {
         this.name = name;
         this.rateLimiter = rateLimiter;
         this.closingTimeout = closingTimeout;
+        this.windowSemaphore = new Semaphore(0);
 
         this.profiler = new PrefixedProfiler(profiler, "RateLimiterDispatcher." + name + ".");
 
@@ -60,38 +85,77 @@ public class RateLimitedDispatcher implements AutoCloseable {
         state.set(State.RUNNING);
         thread.start();
 
-        this.profiler.attachIndicator(QUEUE_SIZE_INDICATOR, () -> (long) queue.size());
+        this.profiler.attachIndicator(QUEUE_SIZE_INDICATOR, () -> (long) taskQueue.size());
+        this.profiler.attachIndicator(ACTIVE_ASYNC_OPERATIONS, () -> (long) activeAsyncOperations.get());
+
+        this.windowSizeSubscription = windowSize.createSubscription().setAndCallListener((oldValue, newValue) -> {
+            submitCommand(new ChangeWindowSizeCommand(oldValue != null ? oldValue : 0, newValue));
+        });
+    }
+
+    public RateLimitedDispatcher(String name,
+                                 RateLimiter rateLimiter,
+                                 Profiler profiler,
+                                 DynamicProperty<Long> closingTimeout) {
+        this(name, rateLimiter, profiler, DynamicProperty.of(0), closingTimeout);
+    }
+
+    private void asyncOperationStarted() {
+        activeAsyncOperations.incrementAndGet();
+    }
+
+    private void asyncOperationCompleted() {
+        activeAsyncOperations.decrementAndGet();
+        windowSemaphore.release();
+    }
+
+    private void submitCommand(Command command) {
+        commandQueue.add(command);
+        taskQueue.add(new AwakeFromWaitingQueueTask());
     }
 
     public <T> CompletableFuture<T> compose(Supplier<CompletableFuture<T>> supplier) {
-        return submit(supplier).thenComposeAsync(cf -> cf);
+        return submit(
+                () -> supplier.get()
+                        .whenComplete((t, throwable) -> asyncOperationCompleted())
+        ).thenComposeAsync(cf -> cf);
+    }
+
+    public <AsyncResultT> CompletableFuture<AsyncResultT> compose(
+            AsyncOperation<AsyncResultT> asyncOperation,
+            AsyncResultSubscriber<AsyncResultT> asyncResultSubscriber
+    ) {
+        return submit(() -> {
+            AsyncResultT asyncResult = asyncOperation.invoke();
+            asyncResultSubscriber.subscribe(asyncResult, this::asyncOperationCompleted);
+            return asyncResult;
+        });
     }
 
     /**
-     * Submits task.
+     * Submits new operation to task queue.
      * <p>
-     * !WARN. Task should not be long running operation and should not block
-     * processing thread.
+     * WARNING: task should not be long running operation
+     * and should not block processing thread.
      *
      * @param supplier task to execute and retrieve result
      * @return feature which represent result of task execution
      */
     @SuppressWarnings({"unchecked"})
-    public <T> CompletableFuture<T> submit(Supplier<T> supplier) {
+    private <T> CompletableFuture<T> submit(Supplier<T> supplier) {
         CompletableFuture<T> result = new CompletableFuture<>();
 
         State state = this.state.get();
         if (state != State.RUNNING) {
             RejectedExecutionException ex = new RejectedExecutionException(
-                    "RateLimiterDispatcher [" + name + "] is in [" + state + "] state"
+                    "RateLimiterDispatcher [" + name + "] is in '" + state + "' state"
             );
             result.completeExceptionally(ex);
             return result;
         }
 
-        @SuppressWarnings("resource")
         ProfiledCall queueWaitTime = profiler.start("queue_wait");
-        queue.add(new Task(result, supplier, queueWaitTime));
+        taskQueue.add(new Task<>(result, supplier, queueWaitTime));
 
         return result;
     }
@@ -107,8 +171,10 @@ public class RateLimitedDispatcher implements AutoCloseable {
             logger.info("Close called on RateLimitedDispatcher [{}] with state [{}]", name, state.get());
             return;
         }
+        windowSizeSubscription.close();
+
         // If queue is empty this will awake waiting Thread
-        queue.add(new PoisonPillTask());
+        taskQueue.add(new AwakeFromWaitingQueueTask());
 
         if (closingTimeout.get() < 0) {
             logger.warn("Rate limiter timeout must be greater than or equals 0. Current value is {}, rate limiter name: {}",
@@ -132,17 +198,56 @@ public class RateLimitedDispatcher implements AutoCloseable {
 
         rateLimiter.close();
         profiler.detachIndicator(QUEUE_SIZE_INDICATOR);
+        profiler.detachIndicator(ACTIVE_ASYNC_OPERATIONS);
     }
 
-    @SuppressWarnings({"unchecked"})
-    private final class TaskProcessor implements Runnable {
 
+    /**
+     * Async operation that should be invoked by {@link RateLimitedDispatcher} at configurate rate.
+     * @param <AsyncResultT> represents result of async operation
+     */
+    @FunctionalInterface
+    public interface AsyncOperation<AsyncResultT> {
+        AsyncResultT invoke();
+    }
+
+    /**
+     * Informs {@link RateLimitedDispatcher} that async operation result is completed.
+     */
+    @FunctionalInterface
+    public interface AsyncResultCallback {
+        /**
+         * Invoke, when async operation result is completed successfully or with exception.
+         */
+        void onAsyncResultCompleted();
+    }
+
+    /**
+     * Invoked by {@link RateLimitedDispatcher}.
+     * Should attach asyncResultCallback to asyncResult and invoke it when asyncResult is complete.
+     * @param <AsyncResultT> represents result of async operation
+     */
+    @FunctionalInterface
+    public interface AsyncResultSubscriber<AsyncResultT> {
+        /**
+         * Invoked by {@link RateLimitedDispatcher}.
+         * Should attach asyncResultCallback to asyncResult and invoke it when asyncResult is complete.
+         *
+         * @param asyncResult         that will complete asynchronously
+         * @param asyncResultCallback should be invoked when asyncResult is complete
+         */
+        void subscribe(AsyncResultT asyncResult, AsyncResultCallback asyncResultCallback);
+    }
+
+    private final class TaskProcessor implements Runnable {
         @Override
         public void run() {
             while (state.get() == State.RUNNING ||
-                    state.get() == State.SHUTTING_DOWN && !queue.isEmpty()) {
+                    (state.get() == State.SHUTTING_DOWN && !taskQueue.isEmpty())) {
                 try {
-                    processingCycle();
+                    processCommandsIfExist();
+                    waitForTaskInQueueAndProcess();
+
                 } catch (InterruptedException interruptedException) {
                     logger.error(interruptedException.getMessage(), interruptedException);
                     break;
@@ -156,50 +261,79 @@ public class RateLimitedDispatcher implements AutoCloseable {
             if (state.get() == State.TERMINATE) {
                 taskExceptionText = "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state";
             } else {
-                taskExceptionText = "RateLimitedDispatcher [" + name + "] was interrupted";
+                taskExceptionText = "RateLimitedDispatcher [" + name + "] interrupted";
             }
 
-            queue.forEach(task -> {
+            taskQueue.forEach(task -> {
                 task.getFuture().completeExceptionally(new RejectedExecutionException(taskExceptionText));
-                task.getQueueWaitTime().close();
+                task.getQueueWaitTimeCall().close();
             });
 
         }
 
-        private void processingCycle() throws InterruptedException {
-            Task task = queue.take();
+        private void processCommandsIfExist() throws InterruptedException {
+            for (Command command = commandQueue.poll();
+                 command != null;
+                 command = commandQueue.poll()) {
 
-            if (task instanceof PoisonPillTask) {
+                command.apply();
+            }
+        }
+
+        private void waitForTaskInQueueAndProcess() throws InterruptedException {
+            Task task = taskQueue.take();
+
+            if (task instanceof AwakeFromWaitingQueueTask) {
                 return;
             }
 
-            task.getQueueWaitTime().stop();
+            task.getQueueWaitTimeCall().stop();
             CompletableFuture future = task.getFuture();
 
             try {
+                if (windowSize > 0) {
+                    try (ProfiledCall acquireWindowTime = profiler.start("acquire_window")) {
+                        boolean windowAcquired = false;
+                        while (!windowAcquired) {
+                            if (state.get() == State.TERMINATE) {
+                                rejectDueToTerminateState(future);
+                                return;
+                            }
+                            windowAcquired = windowSemaphore.tryAcquire(3, TimeUnit.SECONDS);
+                        }
+                        acquireWindowTime.stop();
+                    }
+                }
+
                 try (ProfiledCall limitAcquireTime = profiler.start("acquire_limit")) {
 
-                    boolean acquired = false;
-                    while (state.get() != State.TERMINATE && !acquired) {
-                        acquired = rateLimiter.tryAcquire(1, ChronoUnit.SECONDS);
-                    }
-                    if (!acquired) {
-                        future.completeExceptionally(new RejectedExecutionException(
-                                "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state"
-                        ));
-                        return;
+                    boolean limitAcquired = false;
+                    while (!limitAcquired) {
+                        if (state.get() == State.TERMINATE) {
+                            rejectDueToTerminateState(future);
+                            return;
+                        }
+                        limitAcquired = rateLimiter.tryAcquire(3, ChronoUnit.SECONDS);
                     }
                     limitAcquireTime.stop();
                 }
 
                 Object result = profiler.profile(
-                        "supplied_operation",
+                        "supply_operation",
                         () -> task.getSupplier().get()
                 );
+                asyncOperationStarted();
+
                 future.complete(result);
             } catch (Exception e) {
                 future.completeExceptionally(e);
             }
+        }
+
+        private void rejectDueToTerminateState(CompletableFuture<?> future) {
+            future.completeExceptionally(new RejectedExecutionException(
+                    "RateLimitedDispatcher [" + name + "] is in [TERMINATE] state"
+            ));
         }
     }
 
@@ -207,12 +341,12 @@ public class RateLimitedDispatcher implements AutoCloseable {
         private final Supplier<T> supplier;
         private final CompletableFuture<T> future;
 
-        private final ProfiledCall queueWaitTime;
+        private final ProfiledCall queueWaitTimeCall;
 
-        public Task(CompletableFuture<T> future, Supplier<T> supplier, ProfiledCall queueWaitTime) {
+        public Task(CompletableFuture<T> future, Supplier<T> supplier, ProfiledCall queueWaitTimeCall) {
             this.future = future;
             this.supplier = supplier;
-            this.queueWaitTime = queueWaitTime;
+            this.queueWaitTimeCall = queueWaitTimeCall;
         }
 
         public Supplier<T> getSupplier() {
@@ -223,14 +357,41 @@ public class RateLimitedDispatcher implements AutoCloseable {
             return future;
         }
 
-        public ProfiledCall getQueueWaitTime() {
-            return queueWaitTime;
+        public ProfiledCall getQueueWaitTimeCall() {
+            return queueWaitTimeCall;
         }
     }
 
-    private static class PoisonPillTask extends Task<Void> {
-        public PoisonPillTask() {
+    private static class AwakeFromWaitingQueueTask extends Task<Void> {
+        public AwakeFromWaitingQueueTask() {
             super(new CompletableFuture<>(), () -> null, new NoopProfiler.NoopProfiledCall());
+        }
+    }
+
+    private interface Command{
+        void apply() throws InterruptedException;
+    }
+
+    private class ChangeWindowSizeCommand implements Command {
+        private final int oldSize;
+        private final int newSize;
+
+        public ChangeWindowSizeCommand(int oldSize, int newSize) {
+            this.oldSize = oldSize;
+            this.newSize = newSize;
+        }
+
+        @Override
+        public void apply() throws InterruptedException {
+            if (newSize == oldSize)
+                return;
+
+            windowSize = newSize;
+            if (newSize > oldSize) {
+                windowSemaphore.release(newSize - oldSize);
+            } else {
+                windowSemaphore.acquire(oldSize - newSize);
+            }
         }
     }
 
