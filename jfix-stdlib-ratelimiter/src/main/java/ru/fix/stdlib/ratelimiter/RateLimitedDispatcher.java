@@ -318,11 +318,13 @@ public class RateLimitedDispatcher implements AutoCloseable {
                     limitAcquireTime.stop();
                 }
 
+                // Since async operation may complete faster then Started method call
+                // it must be called before asynchronous operation started
+                asyncOperationStarted();
                 Object result = profiler.profile(
                         "supply_operation",
                         () -> task.getSupplier().get()
                 );
-                asyncOperationStarted();
 
                 future.complete(result);
             } catch (Exception e) {

@@ -1,5 +1,6 @@
 package ru.fix.stdlib.ratelimiter
 
+import io.kotest.assertions.assertSoftly
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -8,13 +9,13 @@ import io.kotest.matchers.doubles.shouldBeBetween
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import mu.KLogging
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertTimeoutPreemptively
 import org.junit.jupiter.api.parallel.Execution
 import org.junit.jupiter.api.parallel.ExecutionMode
-import org.slf4j.LoggerFactory
 import ru.fix.aggregating.profiler.AggregatingProfiler
 import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.aggregating.profiler.Profiler
@@ -23,25 +24,24 @@ import ru.fix.dynamic.property.api.AtomicProperty
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.lang.Thread.sleep
 import java.time.Duration
-import java.util.concurrent.CompletableFuture
+import java.util.concurrent.*
 import java.util.concurrent.CompletableFuture.completedFuture
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 @Execution(ExecutionMode.CONCURRENT)
 class RateLimitedDispatcherTest {
-    private companion object {
-        private val logger = LoggerFactory.getLogger(RateLimitedDispatcherTest::class.java)
+    private companion object : KLogging() {
+        const val DISPATCHER_NAME = "dispatcher-name"
+        const val DISPATCHER_METRICS_PREFIX = "RateLimiterDispatcher.$DISPATCHER_NAME"
     }
 
     @Test
     fun `dispatch async operation with user defined async result type, operation invoked and it's result returned`() {
-        class UserAsyncResult() {
+        class UserAsyncResult {
             fun whenComplete(callback: () -> Unit) {
+                callback()
             }
         }
 
@@ -176,7 +176,6 @@ class RateLimitedDispatcherTest {
         return report;
     }
 
-
     @Test
     fun `when window of uncompleted operations is full no new operation is dispatched`() {
         val dispatcher = TrackableDispatcher()
@@ -199,7 +198,7 @@ class RateLimitedDispatcherTest {
     }
 
     @Test
-    fun `'queue_wait', 'acquire_limit', 'acquire_window', 'supplied_operation', 'queue_size'  metrics gathered during execution`() {
+    fun `'queue_wait', 'acquire_limit', 'acquire_window', 'supplied_operation', 'queue_size', 'active_async_operations' metrics gathered during execution`() {
 
         val RATE_PER_SECOND = 500
         val ITERATIONS = 5 * RATE_PER_SECOND
@@ -209,27 +208,107 @@ class RateLimitedDispatcherTest {
                 interations = ITERATIONS,
                 windowSize = DynamicProperty.of(100))
 
-        val metricNamePrefix = "RateLimiterDispatcher.dispatcher-name"
-
-        report.profilerCallReports.single { it.identity.name == "$metricNamePrefix.queue_wait" }
+        report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.queue_wait" }
                 .stopSum.shouldBe(ITERATIONS)
 
-        report.profilerCallReports.single { it.identity.name == "$metricNamePrefix.acquire_window" }
+        report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.acquire_window" }
                 .stopSum.shouldBe(ITERATIONS)
 
-        report.profilerCallReports.single { it.identity.name == "$metricNamePrefix.acquire_limit" }
+        report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.acquire_limit" }
                 .stopSum.shouldBe(ITERATIONS)
 
-        report.profilerCallReports.single { it.identity.name == "$metricNamePrefix.supply_operation" }
+        report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.supply_operation" }
                 .stopSum.shouldBe(ITERATIONS)
 
-        report.indicators.map { it.key.name }.shouldContain("$metricNamePrefix.queue_size")
+        report.indicators.map { it.key.name }.shouldContain("$DISPATCHER_METRICS_PREFIX.queue_size")
 
-        report.indicators.map { it.key.name }.shouldContain("$metricNamePrefix.active_async_operations")
+        report.indicators.map { it.key.name }.shouldContain("$DISPATCHER_METRICS_PREFIX.active_async_operations")
 
         logger.info(report.toString())
     }
 
+    @Test
+    fun `indicators 'queue_size' and 'active_async_operations' adjusted according to number of queued and active operations`() {
+        val profiler = AggregatingProfiler()
+        val reporter = profiler.createReporter()
+        val trackableDispatcher = TrackableDispatcher(profiler)
+
+        trackableDispatcher.windowProperty.set(10)
+        trackableDispatcher.submitTasks(1..12)
+        await().atMost(1, TimeUnit.SECONDS).until {
+            trackableDispatcher.isSubmittedTaskInvoked(1..10)
+        }
+        reporter.buildReportAndReset().assertSoftly {
+            indicators.mapKeys { it.key.name }.assertSoftly {
+                it["$DISPATCHER_METRICS_PREFIX.queue_size"] shouldBe 1
+                it["$DISPATCHER_METRICS_PREFIX.active_async_operations"] shouldBe 10
+            }
+            profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.acquire_window" }
+                    .activeCallsCountMax shouldBe 1
+        }
+
+        trackableDispatcher.completeTasks(1..10)
+        await().atMost(1, TimeUnit.SECONDS).until {
+            trackableDispatcher.isSubmittedTaskInvoked(11..12)
+        }
+        reporter.buildReportAndReset().indicators.mapKeys { it.key.name }.assertSoftly {
+            it["$DISPATCHER_METRICS_PREFIX.queue_size"] shouldBe 0
+            it["$DISPATCHER_METRICS_PREFIX.active_async_operations"] shouldBe 2
+        }
+
+        trackableDispatcher.completeTasks(11..12)
+        reporter.buildReportAndReset().indicators.mapKeys { it.key.name }.assertSoftly {
+            it["$DISPATCHER_METRICS_PREFIX.queue_size"] shouldBe 0
+            it["$DISPATCHER_METRICS_PREFIX.active_async_operations"] shouldBe 0
+        }
+
+        trackableDispatcher.completeAllAndClose()
+    }
+
+    @Test
+    fun `WHEN many fast CompletableFuture tasks completed THEN 'active_async_operations' is 0`() {
+        val report = `submit series of operations`(500, 4000, DynamicProperty.of(1000))
+
+        logger.info { report }
+        report.indicators.mapKeys { it.key.name }.assertSoftly {
+            it["$DISPATCHER_METRICS_PREFIX.active_async_operations"] shouldBe 0
+        }
+    }
+
+    @Test
+    fun `WHEN completed futures arrived THEN indicators are correctly adjusted`() {
+        val profiler = AggregatingProfiler()
+        val reporter = profiler.createReporter()
+        val trackableDispatcher = TrackableDispatcher(profiler)
+
+        trackableDispatcher.windowProperty.set(5)
+        trackableDispatcher.submitCompletedTasks(1..4)
+        trackableDispatcher.submitTasks(5..6)
+        await().atMost(1, TimeUnit.SECONDS).until {
+            trackableDispatcher.isSubmittedTaskInvoked(1..6)
+        }
+        reporter.buildReportAndReset().indicators.mapKeys { it.key.name }.assertSoftly {
+            it["$DISPATCHER_METRICS_PREFIX.queue_size"] shouldBe 0
+            it["$DISPATCHER_METRICS_PREFIX.active_async_operations"] shouldBe 2
+        }
+
+        trackableDispatcher.submitCompletedTasks(7..10)
+        await().atMost(1, TimeUnit.SECONDS).until {
+            trackableDispatcher.isSubmittedTaskInvoked(7..10)
+        }
+        reporter.buildReportAndReset().indicators.mapKeys { it.key.name }.assertSoftly {
+            it["$DISPATCHER_METRICS_PREFIX.queue_size"] shouldBe 0
+            it["$DISPATCHER_METRICS_PREFIX.active_async_operations"] shouldBe 2
+        }
+
+        trackableDispatcher.completeTasks(5..6)
+        reporter.buildReportAndReset().indicators.mapKeys { it.key.name }.assertSoftly {
+            it["$DISPATCHER_METRICS_PREFIX.queue_size"] shouldBe 0
+            it["$DISPATCHER_METRICS_PREFIX.active_async_operations"] shouldBe 0
+        }
+
+        trackableDispatcher.completeAllAndClose()
+    }
 
     @Test
     fun `increasing window size allows to submit new operations up to the new limit`() {
@@ -265,7 +344,7 @@ class RateLimitedDispatcherTest {
 
         sleep(4000)
         trackableDispatcher.isSubmittedTaskInvoked(1..10).shouldBeTrue()
-        trackableDispatcher.completeTask(1..10)
+        trackableDispatcher.completeTasks(1..10)
 
         trackableDispatcher.windowProperty.set(4)
         trackableDispatcher.submitTasks(11..15)
@@ -379,18 +458,27 @@ class RateLimitedDispatcherTest {
             closingTimeout: Int = 5000,
             profiler: Profiler = NoopProfiler()) =
             RateLimitedDispatcher(
-                    "dispatcher-name",
+                    DISPATCHER_NAME,
                     ConfigurableRateLimiter("rate-limiter-name", rateLimitRequestPerSecond),
                     profiler,
                     window,
                     DynamicProperty.of(closingTimeout.toLong())
             )
 
-    inner class TrackableDispatcher {
+    inner class TrackableDispatcher(
+            profiler: Profiler = NoopProfiler()
+    ) {
+
         val windowProperty = AtomicProperty(0)
-        val dispatcher = createDispatcher(window = windowProperty)
+        val dispatcher = createDispatcher(profiler = profiler, window = windowProperty)
         val submittedTasksResults = HashMap<Int, CompletableFuture<Any?>>()
         val isSubmittedTaskInvoked = HashMap<Int, AtomicBoolean>()
+
+        fun submitCompletedTasks(tasks: IntRange) {
+            for (task in tasks) {
+                submitCompletedTask(task)
+            }
+        }
 
         fun submitTasks(tasks: IntRange) {
             for (task in tasks) {
@@ -398,22 +486,25 @@ class RateLimitedDispatcherTest {
             }
         }
 
-        fun submitTask(task: Int) {
-            val future = CompletableFuture<Any?>()
-            submittedTasksResults[task] = future
-            isSubmittedTaskInvoked[task] = AtomicBoolean(false)
+        fun submitCompletedTask(taskIndex: Int) = submitTask(taskIndex, completedFuture(taskIndex))
+
+        fun submitTask(taskIndex: Int) = submitTask(taskIndex, CompletableFuture())
+
+        private fun submitTask(taskIndex: Int, future: CompletableFuture<Any?>) {
+            submittedTasksResults[taskIndex] = future
+            isSubmittedTaskInvoked[taskIndex] = AtomicBoolean(false)
 
             dispatcher.compose {
-                isSubmittedTaskInvoked[task]!!.set(true)
+                isSubmittedTaskInvoked[taskIndex]!!.set(true)
                 future
             }
         }
 
-        fun completeTask(index: Int) {
-            submittedTasksResults[index]!!.complete(index)
+        fun completeTask(taskIndex: Int) {
+            submittedTasksResults[taskIndex]!!.complete(taskIndex)
         }
 
-        fun completeTask(range: IntRange) {
+        fun completeTasks(range: IntRange) {
             for (task in range) {
                 submittedTasksResults[task]!!.complete(task)
             }
