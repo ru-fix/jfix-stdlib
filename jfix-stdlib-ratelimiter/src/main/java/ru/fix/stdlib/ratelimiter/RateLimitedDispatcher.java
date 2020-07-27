@@ -319,7 +319,7 @@ public class RateLimitedDispatcher implements AutoCloseable {
                 }
 
                 // Since async operation may complete faster then Started method call
-                // it must be called before asynchronous
+                // it must be called before asynchronous operation started
                 asyncOperationStarted();
                 Object result = profiler.profile(
                         "supply_operation",
