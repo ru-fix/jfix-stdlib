@@ -1,26 +1,31 @@
 package ru.fix.stdlib.concurrency.events
 
+import io.kotest.matchers.booleans.shouldBeFalse
+import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import java.lang.Thread.sleep
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 internal class ReducingEventAccumulatorTest {
 
     @Test
     fun `WHEN publish single time THEN handler invoked one time`() {
         val accumulator = ReducingEventAccumulator.lastEventWinAccumulator<Any>()
-        assertNull(accumulator.extractAccumulatedValueOrNull())
+        assertNull(accumulator.extractAccumulatedValue())
         accumulator.publishEvent(Any())
-        assertNotNull(accumulator.extractAccumulatedValueOrNull())
-        assertNull(accumulator.extractAccumulatedValueOrNull())
+        assertNotNull(accumulator.extractAccumulatedValue())
+        assertNull(accumulator.extractAccumulatedValue())
     }
 
     @Test
     fun `WHEN publish several events at once THEN all events reached by one or two reducedEvents`() {
         val eventsQuantity = 50
         val events = Array(eventsQuantity) { it } //numbers from 1 to eventsQuantity
-        val sumAccumulator = defaultIntSumAccumulator()
+        val sumAccumulator = createIntSumAccumulator()
         val awaitThreadsBeforePublishingLatch = CountDownLatch(eventsQuantity)
         val awaitThreadsAfterPublishingLatch = CountDownLatch(eventsQuantity)
 
@@ -38,8 +43,8 @@ internal class ReducingEventAccumulatorTest {
         }
         awaitThreadsAfterPublishingLatch.await()
 
-        val firstAccumulatedValue = sumAccumulator.extractAccumulatedValueOrNull()!!
-        val secondAccumulatedValue = sumAccumulator.extractAccumulatedValueOrNull()
+        val firstAccumulatedValue = sumAccumulator.extractAccumulatedValue()!!
+        val secondAccumulatedValue = sumAccumulator.extractAccumulatedValue()
         assertEquals(events.sum(), firstAccumulatedValue + (secondAccumulatedValue ?: 0))
 
         executor.shutdown()
@@ -48,7 +53,7 @@ internal class ReducingEventAccumulatorTest {
 
     @Test
     fun `WHEN accumulator was closed THEN not reduces events anymore AND returns 'closed' boolean accordingly`() {
-        val sumAccumulator = defaultIntSumAccumulator()
+        val sumAccumulator = createIntSumAccumulator()
         assertFalse(sumAccumulator.isClosed())
         assertFalse(sumAccumulator.isClosedAndEmpty())
 
@@ -61,7 +66,7 @@ internal class ReducingEventAccumulatorTest {
         assertFalse(sumAccumulator.isClosedAndEmpty())
 
         sumAccumulator.publishEvent(6345) // won't be reduced
-        assertEquals(eventBeforeClosing, sumAccumulator.extractAccumulatedValueOrNull())
+        assertEquals(eventBeforeClosing, sumAccumulator.extractAccumulatedValue())
 
         assertTrue(sumAccumulator.isClosed())
         assertTrue(sumAccumulator.isClosedAndEmpty())
@@ -88,7 +93,7 @@ internal class ReducingEventAccumulatorTest {
         var nextReceivedEvents: MutableList<Int>? = mutableListOf()
         while (nextReceivedEvents != null) {
             allReceivedEvents.addAll(nextReceivedEvents)
-            nextReceivedEvents = listAccumulator.extractAccumulatedValueOrNull()
+            nextReceivedEvents = listAccumulator.extractAccumulatedValue()
         }
 
         assertEquals(events.toSet(), allReceivedEvents.toSet())
@@ -100,7 +105,7 @@ internal class ReducingEventAccumulatorTest {
     fun `WHEN receiveReducedEventsUntilClosedAndEmpty used THEN not extracted events will be received after closing`() {
         val eventBeforeClosing = 1
 
-        val sumAccumulator = defaultIntSumAccumulator()
+        val sumAccumulator = createIntSumAccumulator()
 
         sumAccumulator.publishEvent(eventBeforeClosing)
         sumAccumulator.close()
@@ -117,7 +122,7 @@ internal class ReducingEventAccumulatorTest {
     @Test
     fun `WHEN receiveReducedEventsUntilClosed used THEN not extracted events won't be received after closing`() {
 
-        val sumAccumulator = defaultIntSumAccumulator()
+        val sumAccumulator = createIntSumAccumulator()
 
         sumAccumulator.publishEvent(1)
         sumAccumulator.close()
@@ -131,7 +136,22 @@ internal class ReducingEventAccumulatorTest {
     }
 
 
-    private fun defaultIntSumAccumulator() =
+    private fun createIntSumAccumulator() =
             ReducingEventAccumulator<Int, Int> { accumulatedEvent, event -> event + (accumulatedEvent ?: 0) }
 
+    @Test
+    fun `closing awakens threads blocked on extract method`(){
+        val sumAccumulator = createIntSumAccumulator()
+
+        val extractMethodUnblocked = AtomicReference<Boolean>(false)
+        Executors.newSingleThreadExecutor().submit {
+            val value = sumAccumulator.extractAccumulatedValue(TimeUnit.MINUTES.toMillis(1))
+            extractMethodUnblocked.set(true)
+        }
+        sleep(1000)
+        extractMethodUnblocked.get().shouldBeFalse()
+
+        sumAccumulator.close()
+        await().atMost(15, TimeUnit.SECONDS).until { extractMethodUnblocked.get() == true }
+    }
 }

@@ -1,7 +1,5 @@
 package ru.fix.stdlib.concurrency.events
 
-import ru.fix.dynamic.property.api.DynamicProperty
-import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -9,28 +7,26 @@ import kotlin.concurrent.withLock
 private const val DEFAULT_EXTRACT_TIMEOUT_MS = 1_000L
 
 /**
- * All events passed through [publishEvent] function before [extractAccumulatedValueOrNull] invoked
- * will be accumulated in single butch of events by given [reduceFunction].
- * When [extractAccumulatedValueOrNull] invoked, it will receive single butch of events,
- * and new butch will be started by next [publishEvent] invocation.
+ * All events passed through [publishEvent] will be merged by [reduceFunction] into single accumulator.
+ * When [extractAccumulatedValue] invoked, it will extract value from accumulator.
  *
- * Therefore, if [ReceivingEventT] occurred 500 times with breaks in 1 millisecond,
- * and the handler calling the function "extractAccumulatedValueOrNull" spends 100 milliseconds to process one event,
- * it will not process 500 [ReceivingEventT], but 6-7 [AccumulatedEventT]
+ * If producers publishes events [publishEvent] with rate 1 per millisecond
+ * and consumer invokes [extractAccumulatedValue] every second
+ * then each 1000 events will be aggregated by [reduceFunction]
+ * and consumer will see new aggregated value with rate 1 per second.
  *
- * Here is example:
  * ```
  * val events = Array(500) { it } //numbers from 1 to 500
  * val accumulator = ReducingEventAccumulator<Int, MutableList<Int>>(
- * reduceFunction = { accumulator, event ->
- *      accumulator?.apply { add(event) } ?: mutableListOf(event) //accumulate ints in list
- * })
+ *   reduceFunction = { accumulator, event ->
+ *     accumulator?.apply { add(event) } ?: mutableListOf(event) //accumulate ints in list
+ *   })
  * val consumer = Executors.newSingleThreadExecutor()
  * consumer.execute {
- *      accumulator.receiveReducedEventsUntilClosed {
- *          Thread.sleep(100) //simulate slow event consuming
- *          println(it.size) //print received list size
- *      }
+ *   while(!accumulator.isClosed()) {
+ *     Thread.sleep(100) //simulate slow event consuming
+ *     println(it.size) //print received list size
+ *   }
  * }
  * for(event in events) {
  *      Thread.sleep(1) //sending event every 1 ms
@@ -41,102 +37,104 @@ private const val DEFAULT_EXTRACT_TIMEOUT_MS = 1_000L
  * consumer.shutdown()
  * ```
  * It will produce something like this: `1 93 91 91 93 92 39`.
- * The consumer received about 7 events instead of 500, and all 500 numbers was reached
+ * The consumer received about 7 aggregated events instead of 500
  * */
-class ReducingEventAccumulator<ReceivingEventT, AccumulatedEventT>(
+class ReducingEventAccumulator<ReceivingEventT, AccumulatorT>(
         /**
-         * Frequently invoked for each new event to accumulate it in butch of events.
-         * AccumulatedEvent is going to be null at the start of new butch
-         * */
-        private val reduceFunction: (accumulatedEvent: AccumulatedEventT?, newEvent: ReceivingEventT) -> AccumulatedEventT
+         * Merge new event to existing accumulator.
+         * First time accumulators AccumulatorT? value will be null.
+         * Frequently invoked for each new event in publisher thread.
+         * Should be non blocking and lightweight.
+         */
+        private val reduceFunction: (accumulator: AccumulatorT?, newEvent: ReceivingEventT) -> AccumulatorT
 ) : AutoCloseable {
 
     private var closed = false
+    private var accumulator: AccumulatorT? = null
 
-    private val awaitingEventQueue = ArrayBlockingQueue<AccumulatedEventT>(1)
-
-    private val publishingLock = ReentrantLock()
+    private val lock = ReentrantLock()
+    private val eventPublishedOrAccumulatorClosed = lock.newCondition()
 
     /**
-     * Invoke this function for each new event. Thread-safe.
-     * */
-    fun publishEvent(event: ReceivingEventT) = publishingLock.withLock {
+     * Adds event to accumulator.
+     * Reduces events with `reduceFunction` if accumulator is not empty.
+     */
+    fun publishEvent(event: ReceivingEventT) = lock.withLock {
         if (!closed) {
-            val oldAccumulatedEvent: AccumulatedEventT? = awaitingEventQueue.poll()
-            val newAccumulatedEvent: AccumulatedEventT = reduceFunction.invoke(oldAccumulatedEvent, event)
-            awaitingEventQueue.put(newAccumulatedEvent)
+            accumulator = reduceFunction.invoke(accumulator, event)
+            eventPublishedOrAccumulatorClosed.signalAll()
         }
     }
 
-    /**
-     * Invoke this function when you ready to proceed next [AccumulatedEventT]. Thread-safe.
-     * Waits given [extractTimeoutMs] for [publishEvent] invocation
-     * if none [ReceivingEventT] was published since last extraction.
-     *
-     * @return [AccumulatedEventT] if at least one [ReceivingEventT] was passed through [publishEvent] function
-     * since last extraction or during [extractTimeoutMs] after this function invocation, else null
-     * */
-    fun extractAccumulatedValueOrNull(extractTimeoutMs: Long = DEFAULT_EXTRACT_TIMEOUT_MS): AccumulatedEventT? =
-            awaitingEventQueue.poll(extractTimeoutMs, TimeUnit.MILLISECONDS)
 
-    override fun close() = publishingLock.withLock {
+    /**
+     * Extract value from accumulator.
+     * Returns null if accumulator is empty.
+     * Blocks until new event is published or accumulator is closed or extractTimeoutMs expires.
+     *
+     * Invoke this function when you ready to proceed next [AccumulatorT] event.
+     * Thread-safe.
+     *
+     * @return [AccumulatorT] if at least one [ReceivingEventT] was published through [publishEvent] function
+     * since previous extraction or null
+     * */
+    fun extractAccumulatedValue(): AccumulatorT? =
+            extractAccumulatedValue(Long.MAX_VALUE)
+
+    /**
+     * Extract value from accumulator.
+     * Returns null if accumulator is empty.
+     * Blocks until new event is published or accumulator is closed or extractTimeoutMs expires.
+     *
+     * Invoke this function when you ready to proceed next [AccumulatorT] event.
+     * Thread-safe.
+     *
+     * @param extractTimeoutMs time in milliseconds to wait for new event.
+     *                         Use [Long.MAX_VALUE] to specify infinite timeout.
+     *
+     * @return [AccumulatorT] if at least one [ReceivingEventT] was published through [publishEvent] function
+     * since previous extraction or null
+     * */
+    fun extractAccumulatedValue(extractTimeoutMs: Long): AccumulatorT? = lock.withLock {
+        val startTime = System.currentTimeMillis()
+        while (true) {
+            if (accumulator != null) {
+                return accumulator.also { accumulator = null }
+            }
+
+            if(extractTimeoutMs == Long.MAX_VALUE){
+                eventPublishedOrAccumulatorClosed.await()
+
+            } else {
+                val timeLeft = Math.max(0, extractTimeoutMs - System.currentTimeMillis() - startTime)
+                if (timeLeft <= 0)
+                    return null
+
+                eventPublishedOrAccumulatorClosed.await(timeLeft, TimeUnit.MILLISECONDS)
+            }
+        }
+        throw IllegalStateException()
+    }
+
+
+    override fun close(): Unit = lock.withLock {
         closed = true
+        eventPublishedOrAccumulatorClosed.signal()
     }
 
     /**
      * @return true if [close] was invoked
      * */
-    fun isClosed() = publishingLock.withLock {
+    fun isClosed() = lock.withLock {
         return@withLock closed
     }
 
     /**
      * @return true if [close] was invoked and last [ReceivingEventT] received before closing
-     * was accumulated in [AccumulatedEventT] and extracted by [extractAccumulatedValueOrNull] function
+     * was accumulated in [AccumulatorT] and extracted by [extractAccumulatedValue] function
      * */
-    fun isClosedAndEmpty() = publishingLock.withLock {
-        return@withLock closed && awaitingEventQueue.isEmpty()
-    }
-
-    /**
-     * Use it if you want to proceed all events, passed through [publishEvent] function before [close] invocation,
-     * and you don't care about events, which not extracted by [extractAccumulatedValueOrNull] function at closing moment
-     * @see [isClosed]
-     * @see [receiveReducedEvents]
-     * */
-    fun receiveReducedEventsUntilClosed(
-            extractTimeoutMsProperty: DynamicProperty<Long> = DynamicProperty.of(DEFAULT_EXTRACT_TIMEOUT_MS),
-            receiver: (AccumulatedEventT) -> Unit
-    ) =
-            receiveReducedEvents(extractTimeoutMsProperty, this::isClosed, receiver)
-
-    /**
-     * Use it if you want to proceed all events, passed through [publishEvent] function before [close] invocation,
-     * including events, which not extracted by [extractAccumulatedValueOrNull] function at closing moment
-     * @see [isClosedAndEmpty]
-     * @see [receiveReducedEvents]
-     * */
-    fun receiveReducedEventsUntilClosedAndEmpty(
-            extractTimeoutMsProperty: DynamicProperty<Long> = DynamicProperty.of(DEFAULT_EXTRACT_TIMEOUT_MS),
-            receiver: (AccumulatedEventT) -> Unit
-    ) =
-            receiveReducedEvents(extractTimeoutMsProperty, this::isClosedAndEmpty, receiver)
-
-    /**
-     * Uses current thread. Extracts accumulated events by [extractAccumulatedValueOrNull] function
-     * and pass non-null of them in given [receiver], until [stopCondition] became true
-     * */
-    fun receiveReducedEvents(
-            extractTimeoutMsProperty: DynamicProperty<Long> = DynamicProperty.of(DEFAULT_EXTRACT_TIMEOUT_MS),
-            stopCondition: () -> Boolean,
-            receiver: (AccumulatedEventT) -> Unit
-    ) {
-        while (!stopCondition.invoke()) {
-            val eventOrNull = extractAccumulatedValueOrNull(extractTimeoutMsProperty.get())
-            if (eventOrNull != null) {
-                receiver.invoke(eventOrNull)
-            }
-        }
+    fun isClosedAndEmpty() = lock.withLock {
+        return@withLock closed && accumulator == null
     }
 
     companion object {
