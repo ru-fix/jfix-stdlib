@@ -4,8 +4,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-private const val DEFAULT_EXTRACT_TIMEOUT_MS = 1_000L
-
 /**
  * All events passed through [publishEvent] will be merged by [reduceFunction] into single accumulator.
  * When [extractAccumulatedValue] invoked, it will extract value from accumulator.
@@ -123,7 +121,7 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatorT>(
     }
 
     /**
-     * @return true if [close] was invoked
+     * @return true if accumulator is closed
      * */
     fun isClosed() = lock.withLock {
         return@withLock closed
@@ -139,7 +137,7 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatorT>(
 
     companion object {
         @JvmStatic
-        fun <EventT> lastEventWinAccumulator() =
+        fun <EventT> createLastEventWinAccumulator() =
                 ReducingEventAccumulator { _: EventT?, event: EventT -> event }
     }
 }
