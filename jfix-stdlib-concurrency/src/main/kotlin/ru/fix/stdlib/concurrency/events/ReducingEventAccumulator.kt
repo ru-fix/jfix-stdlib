@@ -21,7 +21,7 @@ import kotlin.concurrent.withLock
  *   })
  * val consumer = Executors.newSingleThreadExecutor()
  * consumer.execute {
- *   while(!accumulator.isClosed()) {
+ *   while(!accumulator.isClosedAndEmpty()) {
  *     Thread.sleep(100) //simulate slow event consuming
  *     println(it.size) //print received list size
  *   }
