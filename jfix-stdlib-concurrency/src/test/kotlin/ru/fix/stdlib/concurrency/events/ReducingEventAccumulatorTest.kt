@@ -1,6 +1,7 @@
 package ru.fix.stdlib.concurrency.events
 
 import io.kotest.matchers.booleans.shouldBeFalse
+import io.kotest.matchers.booleans.shouldBeTrue
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
@@ -159,5 +160,21 @@ internal class ReducingEventAccumulatorTest {
 
         sumAccumulator.close()
         await().atMost(15, TimeUnit.SECONDS).until { extractMethodUnblocked.get() == true }
+    }
+
+    @Test
+    fun `extractAccumulatedValue blocks no more that for given timeout`() {
+        val sumAccumulator = createIntSumAccumulator()
+
+        val extractMethodUnblocked = AtomicReference<Boolean>(false)
+        Executors.newSingleThreadExecutor().submit {
+            val value = sumAccumulator.extractAccumulatedValue(TimeUnit.SECONDS.toMillis(3))
+            extractMethodUnblocked.set(true)
+        }
+        sleep(TimeUnit.SECONDS.toMillis(1))
+        extractMethodUnblocked.get().shouldBeFalse()
+
+        await().atMost(5, TimeUnit.SECONDS).until { extractMethodUnblocked.get() == true }
+
     }
 }
