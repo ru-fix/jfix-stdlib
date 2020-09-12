@@ -14,6 +14,7 @@ dependencies {
     implementation(Libs.kotlin_reflect)
 
     testImplementation(Libs.hamkrest)
+    testImplementation(Libs.kotest_assertions)
     testImplementation(Libs.awaitility)
     testImplementation(Libs.junit_api)
     testImplementation(Libs.junit_params)
