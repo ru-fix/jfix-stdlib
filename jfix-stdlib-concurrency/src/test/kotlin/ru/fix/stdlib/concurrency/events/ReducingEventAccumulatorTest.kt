@@ -15,10 +15,10 @@ internal class ReducingEventAccumulatorTest {
     @Test
     fun `WHEN publish single time THEN handler invoked one time`() {
         val accumulator = ReducingEventAccumulator.createLastEventWinAccumulator<Any>()
-        assertNull(accumulator.extractAccumulatedValue())
+        assertNull(accumulator.extractAccumulatedValue(1000))
         accumulator.publishEvent(Any())
         assertNotNull(accumulator.extractAccumulatedValue())
-        assertNull(accumulator.extractAccumulatedValue())
+        assertNull(accumulator.extractAccumulatedValue(1000))
     }
 
     @Test
@@ -43,8 +43,8 @@ internal class ReducingEventAccumulatorTest {
         }
         awaitThreadsAfterPublishingLatch.await()
 
-        val firstAccumulatedValue = sumAccumulator.extractAccumulatedValue()!!
-        val secondAccumulatedValue = sumAccumulator.extractAccumulatedValue()
+        val firstAccumulatedValue = sumAccumulator.extractAccumulatedValue(1000)!!
+        val secondAccumulatedValue = sumAccumulator.extractAccumulatedValue(1000)
         assertEquals(events.sum(), firstAccumulatedValue + (secondAccumulatedValue ?: 0))
 
         executor.shutdown()
@@ -93,7 +93,7 @@ internal class ReducingEventAccumulatorTest {
         var nextReceivedEvents: MutableList<Int>? = mutableListOf()
         while (nextReceivedEvents != null) {
             allReceivedEvents.addAll(nextReceivedEvents)
-            nextReceivedEvents = listAccumulator.extractAccumulatedValue()
+            nextReceivedEvents = listAccumulator.extractAccumulatedValue(1000)
         }
 
         assertEquals(events.toSet(), allReceivedEvents.toSet())
@@ -154,7 +154,7 @@ internal class ReducingEventAccumulatorTest {
             val value = sumAccumulator.extractAccumulatedValue(TimeUnit.MINUTES.toMillis(1))
             extractMethodUnblocked.set(true)
         }
-        sleep(1000)
+        sleep(TimeUnit.SECONDS.toMillis(1))
         extractMethodUnblocked.get().shouldBeFalse()
 
         sumAccumulator.close()

@@ -1,8 +1,10 @@
 package ru.fix.stdlib.concurrency.events
 
+import java.lang.IllegalArgumentException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlin.math.max
 
 /**
  * All events passed through [publishEvent] will be merged by [reduceFunction] into single accumulator.
@@ -47,7 +49,7 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatorT>(
         private val reduceFunction: (accumulator: AccumulatorT?, newEvent: ReceivingEventT) -> AccumulatorT
 ) : AutoCloseable {
 
-    private var closed = false
+    private var isClosed = false
     private var accumulator: AccumulatorT? = null
 
     private val lock = ReentrantLock()
@@ -58,7 +60,7 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatorT>(
      * Reduces events with `reduceFunction` if accumulator is not empty.
      */
     fun publishEvent(event: ReceivingEventT) = lock.withLock {
-        if (!closed) {
+        if (!isClosed) {
             accumulator = reduceFunction.invoke(accumulator, event)
             eventPublishedOrAccumulatorClosed.signalAll()
         }
@@ -99,24 +101,27 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatorT>(
             if (accumulator != null) {
                 return accumulator.also { accumulator = null }
             }
+            if(isClosed){
+                return null
+            }
 
             if(extractTimeoutMs == Long.MAX_VALUE){
                 eventPublishedOrAccumulatorClosed.await()
 
             } else {
-                val timeLeft = Math.max(0, extractTimeoutMs - System.currentTimeMillis() - startTime)
+                val timeLeft = max(0, extractTimeoutMs - (System.currentTimeMillis() - startTime))
                 if (timeLeft <= 0)
                     return null
 
                 eventPublishedOrAccumulatorClosed.await(timeLeft, TimeUnit.MILLISECONDS)
             }
         }
-        throw IllegalStateException()
+        throw IllegalArgumentException()
     }
 
 
     override fun close(): Unit = lock.withLock {
-        closed = true
+        isClosed = true
         eventPublishedOrAccumulatorClosed.signal()
     }
 
@@ -124,7 +129,7 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatorT>(
      * @return true if accumulator is closed
      * */
     fun isClosed() = lock.withLock {
-        return@withLock closed
+        return@withLock isClosed
     }
 
     /**
@@ -132,7 +137,7 @@ class ReducingEventAccumulator<ReceivingEventT, AccumulatorT>(
      * was accumulated in [AccumulatorT] and extracted by [extractAccumulatedValue] function
      * */
     fun isClosedAndEmpty() = lock.withLock {
-        return@withLock closed && accumulator == null
+        return@withLock isClosed && accumulator == null
     }
 
     companion object {
