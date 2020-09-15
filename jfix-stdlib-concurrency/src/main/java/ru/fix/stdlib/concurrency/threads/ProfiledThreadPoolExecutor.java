@@ -36,9 +36,13 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
     /**
      * Invoked by ctor
      */
-    private static ThreadFactory threadFactory(String poolName) {
+    private ThreadFactory threadFactory(String poolName) {
         AtomicInteger counter = new AtomicInteger();
-        return runnable -> new Thread(runnable, poolName + "-" + counter.getAndIncrement());
+        return runnable -> {
+            Thread thread = new Thread(runnable, poolName + "-" + counter.getAndIncrement());
+            thread.setContextClassLoader(getClass().getClassLoader());
+            return thread;
+        };
     }
 
     private final String poolName;
@@ -54,9 +58,9 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
                 maxPoolSize.get(),
                 maxPoolSize.get(),
                 THREAD_IDLE_TIMEOUT_BEFORE_TERMINATION_SEC, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(),
-                threadFactory(poolName)
+                new LinkedBlockingQueue<>()
         );
+        setThreadFactory(threadFactory(poolName));
         this.poolName = poolName;
         this.profiler = profiler;
 
@@ -118,7 +122,7 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
     }
 
     public void setMaxPoolSize(int maxPoolSize) {
-        if(maxPoolSize >= getMaximumPoolSize()){
+        if (maxPoolSize >= getMaximumPoolSize()) {
             setMaximumPoolSize(maxPoolSize);
             setCorePoolSize(maxPoolSize);
         } else {
