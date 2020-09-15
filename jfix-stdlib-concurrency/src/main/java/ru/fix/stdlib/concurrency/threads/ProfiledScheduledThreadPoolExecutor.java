@@ -21,9 +21,13 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
     /**
      * Invoked by ctor
      */
-    private static ThreadFactory threadFactory(String poolName) {
+    private ThreadFactory threadFactory(String poolName) {
         AtomicInteger counter = new AtomicInteger();
-        return runnable -> new Thread(runnable, poolName + "-" + counter.getAndIncrement());
+        return runnable -> {
+            Thread thread = new Thread(runnable, poolName + "-" + counter.getAndIncrement());
+            thread.setContextClassLoader(getClass().getClassLoader());
+            return thread;
+        };
     }
 
     private final String poolName;
@@ -35,9 +39,9 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
 
     public ProfiledScheduledThreadPoolExecutor(String poolName, DynamicProperty<Integer> maxPoolSize, Profiler profiler) {
         super(
-                maxPoolSize.get(),
-                threadFactory(poolName)
+                maxPoolSize.get()
         );
+        setThreadFactory(threadFactory(poolName));
         this.profiler = profiler;
         this.poolName = poolName;
 
@@ -70,7 +74,7 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
     @Override
     protected void afterExecute(Runnable r, Throwable t) {
         ProfiledCall runCall = runExecution.get();
-        if(runCall != null){
+        if (runCall != null) {
             runCall.stop();
             runExecution.remove();
         }
@@ -88,7 +92,7 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
 
 
     public void setMaxPoolSize(int maxPoolSize) {
-        if(maxPoolSize >= getMaximumPoolSize()){
+        if (maxPoolSize >= getMaximumPoolSize()) {
             setMaximumPoolSize(maxPoolSize);
             setCorePoolSize(maxPoolSize);
         } else {

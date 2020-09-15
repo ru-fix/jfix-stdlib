@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ru.fix.aggregating.profiler.AggregatingProfiler
 import ru.fix.aggregating.profiler.Identity
+import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ForkJoinPool
@@ -216,6 +217,66 @@ class ProfiledPoolsTest {
         }
 
         assertEquals(100L, taskCompleted.sum())
+    }
+
+    @Test
+    fun `dynamic pool inherits pool's classloader, instead of caller thread`() {
+        val profiler = NoopProfiler()
+        val pool = NamedExecutors.newDynamicPool("my-pool", DynamicProperty.of(2), profiler)
+
+        fun newProfilerInstance(): Any {
+            // loading via thread context class loader (TCCL)
+            return Thread.currentThread().contextClassLoader.loadClass(NoopProfiler::class.qualifiedName)
+                .getDeclaredConstructor().newInstance()
+        }
+
+        pool.submit {
+            newProfilerInstance()
+        }.get(1, TimeUnit.SECONDS)
+
+        val tccl = Thread.currentThread().contextClassLoader
+        try {
+            // reset current tccl (or set any classloader, which can't load required class)
+            Thread.currentThread().contextClassLoader = null
+
+            // submitting new task, pool hasn't yet inflated, so new thread will be started
+            pool.submit {
+                newProfilerInstance()
+                // we still can instantiate class, because contextClassLoader was inherited
+                // from executorService's class loader, not caller thread's context class loader
+            }.get(1, TimeUnit.SECONDS)
+        } finally {
+            // restore tccl
+            Thread.currentThread().contextClassLoader = tccl
+        }
+    }
+
+    @Test
+    fun `scheduled pool inherits pool's classloader, instead of caller thread`() {
+        val profiler = NoopProfiler()
+        val pool = NamedExecutors.newSingleThreadScheduledExecutor("my-pool", profiler)
+
+        fun newProfilerInstance(): Any {
+            // loading via thread context class loader (TCCL)
+            return Thread.currentThread().contextClassLoader.loadClass(NoopProfiler::class.qualifiedName)
+                .getDeclaredConstructor().newInstance()
+        }
+
+        val tccl = Thread.currentThread().contextClassLoader
+        try {
+            // reset current tccl (or set any classloader, which can't load required class)
+            Thread.currentThread().contextClassLoader = null
+
+            // submitting new task, pool hasn't yet inflated, so new thread will be started
+            pool.submit {
+                newProfilerInstance()
+                // we still can instantiate class, because contextClassLoader was inherited
+                // from executorService's class loader, not caller thread's context class loader
+            }.get(1, TimeUnit.SECONDS)
+        } finally {
+            // restore tccl
+            Thread.currentThread().contextClassLoader = tccl
+        }
     }
 }
 
