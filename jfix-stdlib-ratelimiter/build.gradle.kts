@@ -12,6 +12,8 @@ dependencies {
     testImplementation(Libs.kotlin_jdk8)
     testImplementation(Libs.kotlin_stdlib)
     testImplementation(Libs.kotlin_reflect)
+    testImplementation(Libs.kotlinx_coroutines_core)
+    testImplementation(Libs.kotlinx_coroutines_jdk8)
 
     testImplementation(Libs.hamcrest)
     testImplementation(Libs.mockito)

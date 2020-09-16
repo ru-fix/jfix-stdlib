@@ -9,6 +9,12 @@ import io.kotest.matchers.doubles.shouldBeBetween
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.future.await
+import kotlinx.coroutines.future.future
+import kotlinx.coroutines.runBlocking
 import mu.KLogging
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Test
@@ -524,4 +530,25 @@ class RateLimitedDispatcherTest {
 
     }
 
+    @Test
+    fun `invoke suspend function wrapped to completable future`() {
+        val dispatcher = createDispatcher()
+
+        val suspendFunctionInvoked = AtomicBoolean(false)
+
+        suspend fun mySuspendFunction(): String{
+            delay(1000)
+            suspendFunctionInvoked.set(true)
+            return "suspend-function-result"
+        }
+
+        runBlocking {
+
+            val result = dispatcher.compose { future { mySuspendFunction() } }.await()
+
+            suspendFunctionInvoked.get().shouldBeTrue()
+            result.shouldBe("suspend-function-result")
+
+        }
+    }
 }
