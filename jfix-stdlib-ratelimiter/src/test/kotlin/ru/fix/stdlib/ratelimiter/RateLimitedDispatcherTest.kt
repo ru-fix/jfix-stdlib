@@ -543,6 +543,7 @@ class RateLimitedDispatcherTest {
         }
 
         runBlocking {
+            delay()
 
             val result = dispatcher.compose { future { mySuspendFunction() } }.await()
 
