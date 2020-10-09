@@ -1,3 +1,3 @@
 dependencies {
-    implementation(Libs.jackson)
+    implementation(Libs.jackson_annotations)
 }

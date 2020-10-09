@@ -15,7 +15,7 @@ object Vers {
 
     const val jmh = "1.21"
 
-    const val log4j =  "2.12.0"
+    const val log4j = "2.12.0"
 }
 
 object Libs {
@@ -45,7 +45,7 @@ object Libs {
     const val hamkrest = "com.natpryce:hamkrest:${Vers.hamkrest}"
     const val hamcrest = "org.hamcrest:hamcrest-all:1.3"
 
-    const val jackson = "com.fasterxml.jackson.module:jackson-module-kotlin:${Vers.jackson}"
+    const val jackson_annotations = "com.fasterxml.jackson.core:jackson-annotations:${Vers.jackson}"
 
     const val resilience4j_rate_limiter = "io.github.resilience4j:resilience4j-ratelimiter:${Vers.resilience4j}"
     const val aggregating_profiler = "ru.fix:aggregating-profiler:${Vers.aggregating_profiler}"
@@ -64,7 +64,7 @@ object Libs {
 }
 
 
-enum class Projs{
+enum class Projs {
     jfix_stdlib_concurrency,
     jfix_stdlib_files,
     jfix_stdlib_id_generator,

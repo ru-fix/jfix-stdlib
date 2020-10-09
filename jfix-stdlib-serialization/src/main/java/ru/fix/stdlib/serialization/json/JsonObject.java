@@ -1,4 +1,4 @@
-package ru.fix.commons.lang.util;
+package ru.fix.stdlib.serialization.json;
 
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
@@ -15,7 +15,7 @@ public abstract class JsonObject {
      * Other fields which processor will ignore
      */
     @JsonIgnore
-    private Map<String, Object> otherFields = new HashMap<>();
+    private final Map<String, Object> otherFields = new HashMap<>();
 
     @JsonAnyGetter
     public Map<String, Object> otherFields() {
