@@ -7,6 +7,7 @@ for (project in listOf(
         "jfix-stdlib-id-generator-jmh",
         "jfix-stdlib-ratelimiter",
         "jfix-stdlib-socket",
-        "jfix-stdlib-reference")) {
+        "jfix-stdlib-reference",
+        "jfix-stdlib-serialization")) {
     include(project)
 }

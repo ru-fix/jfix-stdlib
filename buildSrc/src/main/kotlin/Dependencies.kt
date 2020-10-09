@@ -11,6 +11,8 @@ object Vers {
     const val aggregating_profiler = "1.5.16"
     const val dynamic_property = "2.0.4"
 
+    const val jackson = "2.11.3"
+
     const val jmh = "1.21"
 
     const val log4j =  "2.12.0"
@@ -43,6 +45,7 @@ object Libs {
     const val hamkrest = "com.natpryce:hamkrest:${Vers.hamkrest}"
     const val hamcrest = "org.hamcrest:hamcrest-all:1.3"
 
+    const val jackson = "com.fasterxml.jackson.module:jackson-module-kotlin:${Vers.jackson}"
 
     const val resilience4j_rate_limiter = "io.github.resilience4j:resilience4j-ratelimiter:${Vers.resilience4j}"
     const val aggregating_profiler = "ru.fix:aggregating-profiler:${Vers.aggregating_profiler}"
