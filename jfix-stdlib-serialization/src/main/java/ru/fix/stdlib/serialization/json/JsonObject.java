@@ -15,16 +15,16 @@ public abstract class JsonObject {
      * Other fields which processor will ignore
      */
     @JsonIgnore
-    private final Map<String, Object> otherFields = new HashMap<>();
+    private final Map<String, Object> implicitFields = new HashMap<>();
 
     @JsonAnyGetter
     public Map<String, Object> otherFields() {
-        return otherFields;
+        return implicitFields;
     }
 
     @JsonAnySetter
     public void setOtherField(String name, Object value) {
-        otherFields.put(name, value);
+        implicitFields.put(name, value);
     }
 }
 
