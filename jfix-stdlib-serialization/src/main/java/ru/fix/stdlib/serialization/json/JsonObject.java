@@ -12,18 +12,18 @@ import java.util.Map;
 public abstract class JsonObject {
 
     /**
-     * Other fields which processor will ignore
+     * Implicit fields which processor will ignore
      */
     @JsonIgnore
     private final Map<String, Object> implicitFields = new HashMap<>();
 
     @JsonAnyGetter
-    public Map<String, Object> otherFields() {
+    public Map<String, Object> implicitFields() {
         return implicitFields;
     }
 
     @JsonAnySetter
-    public void setOtherField(String name, Object value) {
+    public void setImplicitField(String name, Object value) {
         implicitFields.put(name, value);
     }
 }

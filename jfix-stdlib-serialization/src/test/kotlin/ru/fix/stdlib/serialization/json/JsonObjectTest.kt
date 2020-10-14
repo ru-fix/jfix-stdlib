@@ -21,8 +21,8 @@ class JsonObjectTest {
         val result = Marshaller.unmarshall(json, TestData::class.java)
 
         result shouldNotBe null
-        result.otherFields()["someUnknownField"] shouldBe "str"
-        result.otherFields()["unmappedFields"] shouldBe "1234"
+        result.implicitFields()["someUnknownField"] shouldBe "str"
+        result.implicitFields()["unmappedFields"] shouldBe "1234"
     }
 
     @Test
@@ -30,7 +30,7 @@ class JsonObjectTest {
         val data = TestData(
                 someField = "123"
         ).apply {
-            this.setOtherField("someUnknownField", "str")
+            this.setImplicitField("someUnknownField", "str")
         }
 
         val json = Marshaller.marshall(data)
@@ -73,8 +73,8 @@ class JsonObjectTest {
         val result: TestData = Marshaller.unmarshall(json)
 
         result shouldNotBe null
-        result.otherFields()["someUnknownField"] shouldBe "str"
-        result.otherFields()["unmappedFields"] shouldBe "1234"
+        result.implicitFields()["someUnknownField"] shouldBe "str"
+        result.implicitFields()["unmappedFields"] shouldBe "1234"
     }
 
     data class TestData(
