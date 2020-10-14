@@ -11,9 +11,13 @@ object Vers {
     const val aggregating_profiler = "1.5.16"
     const val dynamic_property = "2.0.4"
 
+    const val jackson = "2.11.3"
+
     const val jmh = "1.21"
 
-    const val log4j =  "2.12.0"
+    const val log4j = "2.12.0"
+
+    const val kotest = "4.2.6"
 }
 
 object Libs {
@@ -37,12 +41,16 @@ object Libs {
     const val mockito = "org.mockito:mockito-all:1.10.19"
     const val kotlin_logging = "io.github.microutils:kotlin-logging:1.4.9"
 
+    const val junit_jupiter = "org.junit.jupiter:junit-jupiter:${Vers.junit}"
     const val junit_api = "org.junit.jupiter:junit-jupiter-api:${Vers.junit}"
     const val junit_params = "org.junit.jupiter:junit-jupiter-params:${Vers.junit}"
     const val junit_engine = "org.junit.jupiter:junit-jupiter-engine:${Vers.junit}"
     const val hamkrest = "com.natpryce:hamkrest:${Vers.hamkrest}"
     const val hamcrest = "org.hamcrest:hamcrest-all:1.3"
+    const val kotest = "io.kotest:kotest-runner-junit5-jvm:${Vers.kotest}"
 
+    const val jackson = "com.fasterxml.jackson.module:jackson-module-kotlin:${Vers.jackson}"
+    const val jackson_annotations = "com.fasterxml.jackson.core:jackson-annotations:${Vers.jackson}"
 
     const val resilience4j_rate_limiter = "io.github.resilience4j:resilience4j-ratelimiter:${Vers.resilience4j}"
     const val aggregating_profiler = "ru.fix:aggregating-profiler:${Vers.aggregating_profiler}"
@@ -61,7 +69,7 @@ object Libs {
 }
 
 
-enum class Projs{
+enum class Projs {
     jfix_stdlib_concurrency,
     jfix_stdlib_files,
     jfix_stdlib_id_generator,
