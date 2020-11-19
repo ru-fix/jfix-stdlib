@@ -7,12 +7,9 @@ import ru.fix.dynamic.property.api.PropertySubscription;
 
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExecutor {
-    private static final long THREAD_IDLE_TIMEOUT_BEFORE_TERMINATION_SEC = 60;
-
     final Profiler profiler;
 
     final ThreadLocal<ProfiledCall> runExecution = new ThreadLocal<>();
@@ -53,8 +50,10 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
         poolSizeIndicatorName = "pool." + profilerPoolName + ".poolSize";
 
         this.setRemoveOnCancelPolicy(true);
-        this.setKeepAliveTime(THREAD_IDLE_TIMEOUT_BEFORE_TERMINATION_SEC, TimeUnit.SECONDS);
-        this.allowCoreThreadTimeOut(true);
+        //Do not use KeepAliveTime, since idle threads is forbidden to kill
+        //If we kill idle threads, tasks scheduled with delay bigger that keepAliveTime
+        //will never be launched by scheduler
+        this.allowCoreThreadTimeOut(false);
 
         this.maxPoolSizeSubscription = maxPoolSize
                 .createSubscription()
