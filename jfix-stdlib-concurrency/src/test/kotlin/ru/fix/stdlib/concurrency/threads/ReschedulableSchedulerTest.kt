@@ -1,8 +1,10 @@
 package ru.fix.stdlib.concurrency.threads
 
+import io.kotest.matchers.ints.shouldBeGreaterThan
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 import ru.fix.aggregating.profiler.AggregatingProfiler
 import ru.fix.aggregating.profiler.Identity
 import ru.fix.aggregating.profiler.NoopProfiler
@@ -21,6 +23,8 @@ import java.util.concurrent.atomic.AtomicReference
 
 
 class ReschedulableSchedulerTest {
+
+    val log = LoggerFactory.getLogger(ReschedulableSchedulerTest::class.java);
 
     @Test
     fun `fixed rate scheduling launches tasks`() {
@@ -245,5 +249,34 @@ class ReschedulableSchedulerTest {
 
         scheduler.shutdown()
         assertTrue(scheduler.awaitTermination(10, SECONDS))
+    }
+
+    @Test
+    fun `idle threads do not die, long and short task launched with fixed pool size of 2`() {
+        val poolSize = AtomicProperty(2)
+        val scheduler = NamedExecutors.newScheduler("fixed-pool-with-size-2", poolSize, NoopProfiler())
+
+        val longTaskInvocationCounter = AtomicInteger()
+        val shortTaskInvocationCounter = AtomicInteger()
+
+        scheduler.schedule(DynamicProperty.of(Schedule.withDelay(10))) {
+            log.info("Long Task start")
+            Thread.sleep(30 * 1000)
+            log.info("Long Task end")
+            longTaskInvocationCounter.incrementAndGet()
+        }
+
+        //Assume that KeepAlive timeout is JDK default 10ms
+        //java.util.concurrent.ScheduledThreadPoolExecutor.DEFAULT_KEEPALIVE_MILLIS
+
+        scheduler.schedule(DynamicProperty.of(Schedule.withDelay(7 * 1000))) {
+            log.info("Short Task start")
+            log.info("Short Task end")
+            shortTaskInvocationCounter.incrementAndGet()
+        }
+
+        await().atMost(1, MINUTES).until { longTaskInvocationCounter.get() > 0 }
+        shortTaskInvocationCounter.get().shouldBeGreaterThan(2)
+
     }
 }

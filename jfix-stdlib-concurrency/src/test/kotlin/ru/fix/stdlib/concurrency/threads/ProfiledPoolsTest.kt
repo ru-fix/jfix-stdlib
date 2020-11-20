@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.LongAdder
 
 class ProfiledPoolsTest {
 
-    @Test()
+    @Test
     fun `submit tasks, close pool and wait for termination`() {
 
         val profiler = AggregatingProfiler()
@@ -48,6 +48,8 @@ class ProfiledPoolsTest {
             println(it)
             assertEquals(98L, it.indicators[Identity("pool.test.queue")])
             assertEquals(2L, it.indicators[Identity("pool.test.activeThreads")])
+            assertEquals(2, it.indicators[Identity("pool.test.poolSize")])
+            assertEquals(2, it.indicators[Identity("pool.test.maxPoolSize")])
         }
 
         //release tasks
@@ -59,18 +61,19 @@ class ProfiledPoolsTest {
 
         assert.that(100, equalTo(taskCompleted.sum()))
 
-        reporter.buildReportAndReset().let {
-            println(it)
-            assertThat(100L, equalTo(it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.stopSum))
-            assertThat(0L, equalTo(it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.activeCallsCountMax))
-            assertThat(98L, equalTo(it.profilerCallReports.find { it.identity.name == "pool.test.await" }?.stopSum))
-            assertThat(0L, equalTo(it.profilerCallReports.find { it.identity.name == "pool.test.await" }?.activeCallsCountMax))
+        reporter.buildReportAndReset().let { report ->
+            println(report)
+            val runReport = report.profilerCallReports.find { it.identity.name == "pool.test.run" }
+            assertThat(100L, equalTo(runReport?.stopSum))
+            assertThat(0L, equalTo(runReport?.activeCallsCountMax))
+            val awaitReport = report.profilerCallReports.find { it.identity.name == "pool.test.await" }
+            assertThat(98L, equalTo(awaitReport?.stopSum))
+            assertThat(0L, equalTo(awaitReport?.activeCallsCountMax))
         }
 
     }
 
-
-    @Test()
+    @Test
     fun `common pool indicators display common pool state`() {
 
         val profiler = AggregatingProfiler()
@@ -105,7 +108,7 @@ class ProfiledPoolsTest {
 
     }
 
-    @Test()
+    @Test
     fun `single task submission`() {
         val profiler = AggregatingProfiler()
         val reporter = profiler.createReporter()
@@ -146,7 +149,7 @@ class ProfiledPoolsTest {
         assertEquals(1, taskCompleted.sum())
     }
 
-    @Test()
+    @Test
     fun `single task schedulling`() {
         val profiler = AggregatingProfiler()
         val reporter = profiler.createReporter()
@@ -181,7 +184,7 @@ class ProfiledPoolsTest {
     }
 
 
-    @Test()
+    @Test
     fun `schedule tasks, close pool and wait for termination`() {
 
         val profiler = AggregatingProfiler()
@@ -193,12 +196,16 @@ class ProfiledPoolsTest {
         val taskCompleted = LongAdder()
 
         val latch = CountDownLatch(100)
+        val releasePoolLatch = CountDownLatch(1)
 
         for (i in 1..100) {
             pool.schedule(
                     {
                         latch.countDown()
                         taskCompleted.increment()
+                        if (i >= 99) {
+                            releasePoolLatch.await()
+                        }
                     },
                     1,
                     TimeUnit.MILLISECONDS)
@@ -206,14 +213,32 @@ class ProfiledPoolsTest {
 
         latch.await()
 
+        reporter.buildReportAndReset { metric, _ ->
+            metric.name in setOf(
+                    "pool.test.queue",
+                    "pool.test.activeThreads",
+                    "pool.test.poolSize",
+                    "pool.test.maxPoolSize"
+            )
+        }.let {
+            println(it)
+            assertEquals(0L, it.indicators[Identity("pool.test.queue")])
+            assertEquals(2L, it.indicators[Identity("pool.test.activeThreads")])
+            assertEquals(2L, it.indicators[Identity("pool.test.poolSize")])
+            assertEquals(2L, it.indicators[Identity("pool.test.maxPoolSize")])
+        }
+
+        releasePoolLatch.countDown()
+
         pool.shutdown()
 
         assertTrue { pool.awaitTermination(10, TimeUnit.SECONDS) }
 
-        reporter.buildReportAndReset().let {
-            println(it)
-            assertEquals(100L, it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.stopSum)
-            assertEquals(0L, it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.activeCallsCountMax)
+        reporter.buildReportAndReset().let { report ->
+            println(report)
+            val runReport = report.profilerCallReports.find { it.identity.name == "pool.test.run" }
+            assertEquals(100L, runReport?.stopSum)
+            assertEquals(0L, runReport?.activeCallsCountMax)
         }
 
         assertEquals(100L, taskCompleted.sum())
@@ -227,7 +252,7 @@ class ProfiledPoolsTest {
         fun newProfilerInstance(): Any {
             // loading via thread context class loader (TCCL)
             return Thread.currentThread().contextClassLoader.loadClass(NoopProfiler::class.qualifiedName)
-                .getDeclaredConstructor().newInstance()
+                    .getDeclaredConstructor().newInstance()
         }
 
         pool.submit {
@@ -259,7 +284,7 @@ class ProfiledPoolsTest {
         fun newProfilerInstance(): Any {
             // loading via thread context class loader (TCCL)
             return Thread.currentThread().contextClassLoader.loadClass(NoopProfiler::class.qualifiedName)
-                .getDeclaredConstructor().newInstance()
+                    .getDeclaredConstructor().newInstance()
         }
 
         val tccl = Thread.currentThread().contextClassLoader
