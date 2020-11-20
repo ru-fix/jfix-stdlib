@@ -10,7 +10,7 @@
         </Console>
     </Appenders>
     <Loggers>
-        <Logger name="ru.fix" level="info"/>
+        <Logger name="ru.fix" level="trace"/>
         <Root level="info">
             <AppenderRef ref="console"/>
         </Root>

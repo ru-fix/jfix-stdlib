@@ -10,9 +10,10 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExecutor {
-    final Profiler profiler;
 
-    final ThreadLocal<ProfiledCall> runExecution = new ThreadLocal<>();
+    private final Profiler profiler;
+
+    private final ThreadLocal<ProfiledCall> runExecution = new ThreadLocal<>();
     private final PropertySubscription<Integer> maxPoolSizeSubscription;
 
     /**
@@ -32,6 +33,7 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
     private final String activeThreadsIndicatorName;
     private final String callRunName;
     private final String poolSizeIndicatorName;
+    private final String maxPoolSizeIndicatorName;
 
 
     public ProfiledScheduledThreadPoolExecutor(String poolName, DynamicProperty<Integer> maxPoolSize, Profiler profiler) {
@@ -44,16 +46,17 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
 
         String profilerPoolName = poolName.replace('.', '_');
 
-        queueIndicatorName = "pool." + profilerPoolName + ".queue";
-        activeThreadsIndicatorName = "pool." + profilerPoolName + ".activeThreads";
-        callRunName = "pool." + profilerPoolName + ".run";
-        poolSizeIndicatorName = "pool." + profilerPoolName + ".poolSize";
+        queueIndicatorName = metricName(profilerPoolName, "queue");
+        activeThreadsIndicatorName = metricName(profilerPoolName,"activeThreads");
+        callRunName = metricName(profilerPoolName,"run");
+        poolSizeIndicatorName = metricName(profilerPoolName,"poolSize");
+        maxPoolSizeIndicatorName = metricName(profilerPoolName,"maxPoolSize");
 
         this.setRemoveOnCancelPolicy(true);
         //Do not use KeepAliveTime, since idle threads is forbidden to kill
         //If we kill idle threads, tasks scheduled with delay bigger that keepAliveTime
         //will never be launched by scheduler
-        this.allowCoreThreadTimeOut(false);
+        super.allowCoreThreadTimeOut(false);
 
         this.maxPoolSizeSubscription = maxPoolSize
                 .createSubscription()
@@ -62,6 +65,26 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
         profiler.attachIndicator(queueIndicatorName, () -> (long) this.getQueue().size());
         profiler.attachIndicator(activeThreadsIndicatorName, () -> (long) this.getActiveCount());
         profiler.attachIndicator(poolSizeIndicatorName, () -> (long) this.getPoolSize());
+        profiler.attachIndicator(maxPoolSizeIndicatorName, () -> (long) this.getMaximumPoolSize());
+    }
+
+    private String metricName(String profilerPoolName, String metricName) {
+        return "pool." + profilerPoolName + "." + metricName;
+    }
+
+    /**
+     * It is restricted to allow core threads timeout for scheduling executor.
+     *
+     * @throws IllegalStateException this method always throws such exception to indicate that
+     * it is not allowed to be called.
+     */
+    @Override
+    public final void allowCoreThreadTimeOut(boolean value) {
+        throw new IllegalStateException(
+                "It is not allowed to change allowCoreThreadTimeOut property for scheduling executor, " +
+                        "since idle threads is forbidden to kill. If we kill idle threads, tasks scheduled " +
+                        "with delay bigger that keepAliveTime will never be launched by scheduler."
+        );
     }
 
     @Override
@@ -85,6 +108,7 @@ public class ProfiledScheduledThreadPoolExecutor extends ScheduledThreadPoolExec
         profiler.detachIndicator(queueIndicatorName);
         profiler.detachIndicator(activeThreadsIndicatorName);
         profiler.detachIndicator(poolSizeIndicatorName);
+        profiler.detachIndicator(maxPoolSizeIndicatorName);
         maxPoolSizeSubscription.close();
         super.terminated();
     }

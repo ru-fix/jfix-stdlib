@@ -15,9 +15,9 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
 
     private static final long THREAD_IDLE_TIMEOUT_BEFORE_TERMINATION_SEC = 60;
 
-    final Profiler profiler;
+    private final Profiler profiler;
 
-    final ThreadLocal<ProfiledCall> runExecution = new ThreadLocal<>();
+    private final ThreadLocal<ProfiledCall> runExecution = new ThreadLocal<>();
     private final PropertySubscription<Integer> maxPoolSizeSubscription;
 
     private abstract class ProfiledRunnable implements Runnable {
@@ -49,6 +49,7 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
     private final String queueIndicatorName;
     private final String activeThreadsIndicatorName;
     private final String poolSizeIndicatorName;
+    private final String maxPoolSizeIndicatorName;
     private final String callAwaitName;
     private final String callRunName;
 
@@ -66,11 +67,12 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
 
         String profilerPoolName = poolName.replace('.', '_');
 
-        queueIndicatorName = "pool." + profilerPoolName + ".queue";
-        activeThreadsIndicatorName = "pool." + profilerPoolName + ".activeThreads";
-        callAwaitName = "pool." + profilerPoolName + ".await";
-        callRunName = "pool." + profilerPoolName + ".run";
-        poolSizeIndicatorName = "pool." + profilerPoolName + ".poolSize";
+        queueIndicatorName = metricName(profilerPoolName, "queue");
+        activeThreadsIndicatorName = metricName(profilerPoolName, "activeThreads");
+        callAwaitName = metricName(profilerPoolName, "await");
+        callRunName = metricName(profilerPoolName, "run");
+        poolSizeIndicatorName = metricName(profilerPoolName, "poolSize");
+        maxPoolSizeIndicatorName = metricName(profilerPoolName, "maxPoolSize");
 
         super.allowCoreThreadTimeOut(true);
 
@@ -81,6 +83,7 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
         profiler.attachIndicator(queueIndicatorName, () -> (long) this.getQueue().size());
         profiler.attachIndicator(activeThreadsIndicatorName, () -> (long) this.getActiveCount());
         profiler.attachIndicator(poolSizeIndicatorName, () -> (long) this.getPoolSize());
+        profiler.attachIndicator(maxPoolSizeIndicatorName, () -> (long) this.getMaximumPoolSize());
     }
 
     @Override
@@ -117,6 +120,7 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
         profiler.detachIndicator(queueIndicatorName);
         profiler.detachIndicator(activeThreadsIndicatorName);
         profiler.detachIndicator(poolSizeIndicatorName);
+        profiler.detachIndicator(maxPoolSizeIndicatorName);
         maxPoolSizeSubscription.close();
         super.terminated();
     }
@@ -134,5 +138,9 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
     @Override
     public String toString() {
         return getClass().getSimpleName() + "(" + this.poolName + ")";
+    }
+
+    private String metricName(String profilerPoolName, String metricName) {
+        return "pool." + profilerPoolName + "." + metricName;
     }
 }
