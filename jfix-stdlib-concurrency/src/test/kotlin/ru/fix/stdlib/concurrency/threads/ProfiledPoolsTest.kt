@@ -203,7 +203,7 @@ class ProfiledPoolsTest {
                     {
                         latch.countDown()
                         taskCompleted.increment()
-                        if (i == 100) {
+                        if (i >= 99) {
                             releasePoolLatch.await()
                         }
                     },
@@ -223,7 +223,7 @@ class ProfiledPoolsTest {
         }.let {
             println(it)
             assertEquals(0L, it.indicators[Identity("pool.test.queue")])
-            assertEquals(1L, it.indicators[Identity("pool.test.activeThreads")])
+            assertEquals(2L, it.indicators[Identity("pool.test.activeThreads")])
             assertEquals(2L, it.indicators[Identity("pool.test.poolSize")])
             assertEquals(2L, it.indicators[Identity("pool.test.maxPoolSize")])
         }
