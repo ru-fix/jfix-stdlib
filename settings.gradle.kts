@@ -8,6 +8,7 @@ for (project in listOf(
         "jfix-stdlib-ratelimiter",
         "jfix-stdlib-socket",
         "jfix-stdlib-reference",
-        "jfix-stdlib-serialization")) {
+        "jfix-stdlib-serialization",
+        "jfix-stdlib-batching")) {
     include(project)
 }

@@ -138,3 +138,11 @@ cd jfix-stdlib-id-generator-jmh
 gradle --stop
 gradle --no-daemon clean build jmh
 ```
+
+# jfix-stdlib-batching
+
+Encapsulates batching execution of several client's operations as one task.
+
+```kotlin
+//TODO provide example
+```
