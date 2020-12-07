@@ -143,6 +143,103 @@ gradle --no-daemon clean build jmh
 
 Encapsulates batching execution of several client's operations as one task.
 
+Follow example of batch sending of http requests to different hosts:
+
 ```kotlin
-//TODO provide example
+import ru.fix.aggregating.profiler.AggregatingProfiler
+import ru.fix.stdlib.batching.BatchTask
+import ru.fix.stdlib.batching.BatchingManager
+import ru.fix.stdlib.batching.BatchingParameters
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executors
+import kotlin.streams.asSequence
+
+data class SimpleHttpBatchingConfig(
+    val httpClient: HttpClient
+)
+
+data class SimpleBatchedHttpPayload(
+    val batchItemContent: Int
+) {
+    val resultFuture: CompletableFuture<String> = CompletableFuture()
+}
+
+data class SimpleHttpBatchKeyType(val httpUri: URI)
+
+object SimpleHttpBatchTask : BatchTask<SimpleHttpBatchingConfig, SimpleBatchedHttpPayload, SimpleHttpBatchKeyType> {
+
+    override fun process(
+        config: SimpleHttpBatchingConfig,
+        batch: MutableList<SimpleBatchedHttpPayload>,
+        key: SimpleHttpBatchKeyType
+    ) {
+        // merge content from several requests into one batched
+        val joinedContent =
+            batch.joinToString(separator = ", ", prefix = "[", postfix = "]") { it.batchItemContent.toString() }
+
+        // send batched http request
+        config.httpClient.sendAsync(
+            HttpRequest.newBuilder()
+                .uri(key.httpUri)
+                .POST(HttpRequest.BodyPublishers.ofString(joinedContent))
+                .build(),
+            HttpResponse.BodyHandlers.ofLines()
+        ).thenApplyAsync {
+            // let client code know that some response arrived
+            for ((index, response) in it.body().asSequence().withIndex()) {
+                batch[index].resultFuture.complete(response)
+            }
+        }
+        // do not block and process to the next batch
+        // HOWEVER it is up to client to decide whether to block or not
+    }
+
+}
+
+val batchingManagerProfiler = AggregatingProfiler()
+
+val batchingManager = BatchingManager<SimpleHttpBatchingConfig, SimpleBatchedHttpPayload, SimpleHttpBatchKeyType>(
+    SimpleHttpBatchingConfig(
+        httpClient = HttpClient.newBuilder()
+            .executor(Executors.newSingleThreadExecutor())
+            .build()
+    ),
+    SimpleHttpBatchTask,
+    BatchingParameters().apply {
+        batchSize = 256
+        batchThreads = 2
+    },
+    "simple-batch-manager",
+    batchingManagerProfiler
+)
+
+
+// Usage in clients
+val testHost1 = SimpleHttpBatchKeyType(httpUri = URI.create("http://test-host-1"))
+val testHost2 = SimpleHttpBatchKeyType(httpUri = URI.create("http://test-host-2"))
+
+val testHost1Requests = (1..3).map {
+    SimpleBatchedHttpPayload(batchItemContent = it)
+}
+
+val testHost2Requests = (2..7).map {
+    SimpleBatchedHttpPayload(batchItemContent = it)
+}
+
+for (testHost1Request in testHost1Requests) {
+    batchingManager.enqueue(testHost1, testHost1Request)
+}
+for (testHost2Request in testHost2Requests) {
+    batchingManager.enqueue(testHost2, testHost2Request)
+}
+
+(testHost1Requests + testHost2Requests).forEach { request ->
+    request.resultFuture.thenApplyAsync { response ->
+        println("""Request with content='${request.batchItemContent} - response is '$response''""")
+    }
+}
 ```
