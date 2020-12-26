@@ -46,17 +46,16 @@ public class ReschedulableScheduler implements AutoCloseable {
     }
 
     /**
-     * change execution by schedule type
+     * Same as {@link #schedule(DynamicProperty, DynamicProperty, Runnable)}
+     * but doesn't throw exception if {@link ReschedulableScheduler#shutdown()} was executed
      *
-     * @return result task from executionService
+     * @return result task from executionService or null if {@link ReschedulableScheduler#shutdown()} was executed
      */
-    public ScheduledFuture<?> schedule(DynamicProperty<Schedule> scheduleSupplier,
-                                       DynamicProperty<Long> startDelay,
-                                       Runnable task) {
-
+    public ScheduledFuture<?> scheduleIfNotShutdown(DynamicProperty<Schedule> scheduleSupplier,
+                                                    DynamicProperty<Long> startDelay,
+                                                    Runnable task) {
         if (isShutdown) {
-            throw new IllegalStateException("ReschedulableScheduler is shutdown and can not schedule new task." +
-                    " Task: " + task);
+            return null;
         }
 
         SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
@@ -72,14 +71,35 @@ public class ReschedulableScheduler implements AutoCloseable {
         return taskWrapper.launch();
     }
 
+    /**
+     * change execution by schedule type
+     *
+     * @return result task from executionService
+     * @throws IllegalStateException if {@link ReschedulableScheduler#shutdown()} was executed
+     */
+    public ScheduledFuture<?> schedule(DynamicProperty<Schedule> scheduleSupplier,
+                                       DynamicProperty<Long> startDelay,
+                                       Runnable task) {
+
+        ScheduledFuture<?> scheduledFuture = scheduleIfNotShutdown(scheduleSupplier, startDelay, task);
+
+        if (scheduledFuture == null) {
+            throw new IllegalStateException("ReschedulableScheduler is shutdown and can not schedule new task." +
+                    " Task: " + task);
+        }
+
+        return scheduledFuture;
+    }
+
+    /**
+     * Same as {@link #schedule(DynamicProperty, DynamicProperty, Runnable)} but with fixed startDelay
+     */
     public ScheduledFuture<?> schedule(DynamicProperty<Schedule> scheduleSupplier, long startDelay, Runnable task) {
         return schedule(scheduleSupplier, DynamicProperty.of(startDelay), task);
     }
 
     /**
-     * change execution by schedule type with start delay 0
-     *
-     * @return result task from executionService
+     * Same as {@link #schedule(DynamicProperty, long, Runnable)} but with zero startDelay
      */
     public ScheduledFuture<?> schedule(DynamicProperty<Schedule> schedule, Runnable task) {
         return schedule(schedule, DEFAULT_START_DELAY, task);
