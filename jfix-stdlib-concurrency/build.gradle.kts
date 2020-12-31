@@ -13,6 +13,10 @@ dependencies {
     implementation(Libs.kotlin_stdlib)
     implementation(Libs.kotlin_reflect)
 
+    api(Libs.blockhound)
+
+    testImplementation(Libs.kotlinx_coroutines_jdk8)
+
     testImplementation(Libs.hamkrest)
     testImplementation(Libs.kotest_assertions)
     testImplementation(Libs.awaitility)

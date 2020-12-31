@@ -11,6 +11,8 @@ object Vers {
     const val aggregating_profiler = "1.5.16"
     const val dynamic_property = "2.0.4"
 
+    const val blockhound = "1.0.4.RELEASE"
+
     const val jackson = "2.11.3"
 
     const val jmh = "1.21"
@@ -33,10 +35,12 @@ object Libs {
     const val slf4j_api = "org.slf4j:slf4j-api:${Vers.sl4j}"
     const val slf4j_simple = "org.slf4j:slf4j-simple:${Vers.sl4j}"
 
-    val log4j_api = "org.apache.logging.log4j:log4j-api:${Vers.log4j}"
-    val log4j_core = "org.apache.logging.log4j:log4j-core:${Vers.log4j}"
-    val log4j_kotlin = "org.apache.logging.log4j:log4j-api-kotlin:1.0.0"
-    val slf4j_over_log4j = "org.apache.logging.log4j:log4j-slf4j-impl:${Vers.log4j}"
+    const val log4j_api = "org.apache.logging.log4j:log4j-api:${Vers.log4j}"
+    const val log4j_core = "org.apache.logging.log4j:log4j-core:${Vers.log4j}"
+    const val log4j_kotlin = "org.apache.logging.log4j:log4j-api-kotlin:1.0.0"
+    const val slf4j_over_log4j = "org.apache.logging.log4j:log4j-slf4j-impl:${Vers.log4j}"
+
+    const val blockhound = "io.projectreactor.tools:blockhound:${Vers.blockhound}"
 
     const val mockito = "org.mockito:mockito-all:1.10.19"
     const val kotlin_logging = "io.github.microutils:kotlin-logging:1.4.9"
