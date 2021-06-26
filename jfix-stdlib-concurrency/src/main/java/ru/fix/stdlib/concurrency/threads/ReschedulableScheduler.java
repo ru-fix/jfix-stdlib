@@ -10,6 +10,9 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -23,7 +26,10 @@ public class ReschedulableScheduler implements AutoCloseable {
 
     private final Set<SelfSchedulableTaskWrapper> activeTasks;
     private final Profiler profiler;
-    private volatile boolean isShutdown = false;
+    private boolean isShutdown = false;
+    private final ReadWriteLock shutdownReadWriteLock = new ReentrantReadWriteLock();
+    private final Lock shutdownReadLock = shutdownReadWriteLock.readLock();
+    private final Lock shutdownWriteLock = shutdownReadWriteLock.writeLock();
     private final Logger log;
     private final String scheduledTasksIndicatorName;
 
@@ -46,40 +52,63 @@ public class ReschedulableScheduler implements AutoCloseable {
     }
 
     /**
+     * Same as {@link #schedule(DynamicProperty, DynamicProperty, Runnable)}
+     * but doesn't throw exception if {@link ReschedulableScheduler#shutdown()} was executed
+     *
+     * @return result task from executionService or null if {@link ReschedulableScheduler#shutdown()} was executed
+     */
+    public ScheduledFuture<?> scheduleIfNotShutdown(DynamicProperty<Schedule> scheduleSupplier,
+                                                    DynamicProperty<Long> startDelay,
+                                                    Runnable task) {
+        if (!shutdownReadLock.tryLock() || isShutdown) {
+            return null;
+        }
+        try {
+            SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
+                    scheduleSupplier,
+                    startDelay,
+                    task,
+                    executorService,
+                    activeTasks::remove,
+                    log
+            );
+
+            activeTasks.add(taskWrapper);
+            return taskWrapper.launch();
+        } finally {
+            shutdownReadLock.unlock();
+        }
+    }
+
+    /**
      * change execution by schedule type
      *
      * @return result task from executionService
+     * @throws IllegalStateException if {@link ReschedulableScheduler#shutdown()} was executed
      */
     public ScheduledFuture<?> schedule(DynamicProperty<Schedule> scheduleSupplier,
                                        DynamicProperty<Long> startDelay,
                                        Runnable task) {
 
-        if (isShutdown) {
+        ScheduledFuture<?> scheduledFuture = scheduleIfNotShutdown(scheduleSupplier, startDelay, task);
+
+        if (scheduledFuture == null) {
             throw new IllegalStateException("ReschedulableScheduler is shutdown and can not schedule new task." +
                     " Task: " + task);
         }
 
-        SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
-                scheduleSupplier,
-                startDelay,
-                task,
-                executorService,
-                activeTasks::remove,
-                log
-        );
-
-        activeTasks.add(taskWrapper);
-        return taskWrapper.launch();
+        return scheduledFuture;
     }
 
+    /**
+     * Same as {@link #schedule(DynamicProperty, DynamicProperty, Runnable)} but with fixed startDelay
+     */
     public ScheduledFuture<?> schedule(DynamicProperty<Schedule> scheduleSupplier, long startDelay, Runnable task) {
         return schedule(scheduleSupplier, DynamicProperty.of(startDelay), task);
     }
 
     /**
-     * change execution by schedule type with start delay 0
-     *
-     * @return result task from executionService
+     * Same as {@link #schedule(DynamicProperty, long, Runnable)} but with zero startDelay
      */
     public ScheduledFuture<?> schedule(DynamicProperty<Schedule> schedule, Runnable task) {
         return schedule(schedule, DEFAULT_START_DELAY, task);
@@ -91,10 +120,15 @@ public class ReschedulableScheduler implements AutoCloseable {
      * shorter version of {@code getExecutorService().shutdown()}
      */
     public void shutdown() {
-        cancelAllTasks(false);
-        executorService.shutdown();
-        detachIndicators();
-        isShutdown = true;
+        shutdownWriteLock.lock();
+        try {
+            cancelAllTasks(false);
+            executorService.shutdown();
+            detachIndicators();
+            isShutdown = true;
+        } finally {
+            shutdownWriteLock.unlock();
+        }
     }
 
     /**
@@ -103,10 +137,15 @@ public class ReschedulableScheduler implements AutoCloseable {
      * shorter version of {@code getExecutorService().shutdownNow()}
      */
     public void shutdownNow() {
-        cancelAllTasks(true);
-        executorService.shutdownNow();
-        detachIndicators();
-        isShutdown = true;
+        shutdownWriteLock.lock();
+        try {
+            cancelAllTasks(true);
+            executorService.shutdownNow();
+            detachIndicators();
+            isShutdown = true;
+        } finally {
+            shutdownWriteLock.unlock();
+        }
     }
 
     private void cancelAllTasks(boolean mayInterruptIfRunning) {
