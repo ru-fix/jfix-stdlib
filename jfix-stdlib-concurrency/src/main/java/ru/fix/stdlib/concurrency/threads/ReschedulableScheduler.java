@@ -10,6 +10,9 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -23,7 +26,10 @@ public class ReschedulableScheduler implements AutoCloseable {
 
     private final Set<SelfSchedulableTaskWrapper> activeTasks;
     private final Profiler profiler;
-    private volatile boolean isShutdown = false;
+    private boolean isShutdown = false;
+    private final ReadWriteLock shutdownReadWriteLock = new ReentrantReadWriteLock();
+    private final Lock shutdownReadLock = shutdownReadWriteLock.readLock();
+    private final Lock shutdownWriteLock = shutdownReadWriteLock.writeLock();
     private final Logger log;
     private final String scheduledTasksIndicatorName;
 
@@ -54,21 +60,24 @@ public class ReschedulableScheduler implements AutoCloseable {
     public ScheduledFuture<?> scheduleIfNotShutdown(DynamicProperty<Schedule> scheduleSupplier,
                                                     DynamicProperty<Long> startDelay,
                                                     Runnable task) {
-        if (isShutdown) {
+        if (!shutdownReadLock.tryLock() || isShutdown) {
             return null;
         }
+        try {
+            SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
+                    scheduleSupplier,
+                    startDelay,
+                    task,
+                    executorService,
+                    activeTasks::remove,
+                    log
+            );
 
-        SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
-                scheduleSupplier,
-                startDelay,
-                task,
-                executorService,
-                activeTasks::remove,
-                log
-        );
-
-        activeTasks.add(taskWrapper);
-        return taskWrapper.launch();
+            activeTasks.add(taskWrapper);
+            return taskWrapper.launch();
+        } finally {
+            shutdownReadLock.unlock();
+        }
     }
 
     /**
@@ -111,10 +120,15 @@ public class ReschedulableScheduler implements AutoCloseable {
      * shorter version of {@code getExecutorService().shutdown()}
      */
     public void shutdown() {
-        cancelAllTasks(false);
-        executorService.shutdown();
-        detachIndicators();
-        isShutdown = true;
+        shutdownWriteLock.lock();
+        try {
+            cancelAllTasks(false);
+            executorService.shutdown();
+            detachIndicators();
+            isShutdown = true;
+        } finally {
+            shutdownWriteLock.unlock();
+        }
     }
 
     /**
@@ -123,10 +137,15 @@ public class ReschedulableScheduler implements AutoCloseable {
      * shorter version of {@code getExecutorService().shutdownNow()}
      */
     public void shutdownNow() {
-        cancelAllTasks(true);
-        executorService.shutdownNow();
-        detachIndicators();
-        isShutdown = true;
+        shutdownWriteLock.lock();
+        try {
+            cancelAllTasks(true);
+            executorService.shutdownNow();
+            detachIndicators();
+            isShutdown = true;
+        } finally {
+            shutdownWriteLock.unlock();
+        }
     }
 
     private void cancelAllTasks(boolean mayInterruptIfRunning) {
