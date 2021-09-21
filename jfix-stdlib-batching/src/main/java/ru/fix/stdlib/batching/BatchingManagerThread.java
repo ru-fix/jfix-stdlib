@@ -4,8 +4,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.fix.aggregating.profiler.IndicationProvider;
-import ru.fix.aggregating.profiler.ProfiledCall;
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.stdlib.concurrency.threads.NamedExecutors;
@@ -39,10 +37,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
 
     private final Profiler profiler;
     private final String batchManagerId;
-
-    private final String batchManagerThreadAwaitMetric;
-    private final String batchManagerOperationsAwaitMetric;
-    private final List<String> operationQueueSizeIndicators = new ArrayList<>();
+    private final BatchingManagerMetricsProvider metricsProvider;
 
     public BatchingManagerThread(
             ConfigT config,
@@ -70,8 +65,8 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
         this.profiler = profiler;
         this.batchManagerId = batchManagerId;
         this.batchTask = batchTask;
-        this.batchManagerThreadAwaitMetric = "BatchingManagerThread." + batchManagerId + ".batch_processor_thread_await";
-        this.batchManagerOperationsAwaitMetric = "BatchingManagerThread." + batchManagerId + ".operations_await";
+
+        metricsProvider = new BatchingManagerMetricsProvider(batchManagerId, profiler);
     }
 
     private static void shutdownAndAwaitTermination(ExecutorService executor) {
@@ -122,7 +117,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
             KeyT key = null;
             while (buffer == null && !isShutdown.get()) {
 
-                Map.Entry<KeyT, Queue<Operation<PayloadT>>> mappedQueue = findQueueReadyForProcessing();
+                Map.Entry<KeyT, Queue<Operation<PayloadT>>> mappedQueue = takeAnyQueueReadyForProcessing();
 
                 if (mappedQueue != null) {
                     key = mappedQueue.getKey();
@@ -138,7 +133,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
             }
         }
 
-        detachOperationQueueSizeIndicators();
+        metricsProvider.detachOperationQueueSizeIndicators();
         log.trace("BatchProcessorManager thread stopped.");
     }
 
@@ -159,7 +154,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
     private boolean waitForAvailableBatchProcessThread() {
         log.trace("Wait available thread in BatchProcessor thread pool");
         boolean isBatchProcessorThreadAvailable = false;
-        ProfiledCall threadAwaitCall = profiler.start(batchManagerThreadAwaitMetric);
+        metricsProvider.startBatchProcessorThreadAwaitProfiling();
         while (!isShutdown.get() && !isBatchProcessorThreadAvailable) {
             try {
                 isBatchProcessorThreadAvailable = batchProcessorsTracker.tryAcquire(100,
@@ -170,19 +165,19 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
                 }
             } catch (InterruptedException exc) {
                 log.trace(THREAD_INTERRUPTED_MESSAGE, exc);
-                threadAwaitCall.stop();
+                metricsProvider.stopBatchManagerThreadAwaitProfiling();
                 Thread.currentThread().interrupt();
                 return false;
             }
         }
-        threadAwaitCall.stop();
+        metricsProvider.stopBatchManagerThreadAwaitProfiling();
         return true;
     }
 
     @Nullable
-    private Map.Entry<KeyT, Queue<Operation<PayloadT>>> findQueueReadyForProcessing() {
+    private Map.Entry<KeyT, Queue<Operation<PayloadT>>> takeAnyQueueReadyForProcessing() {
         return pendingTableOperations.entrySet().stream()
-                .map(this::checkAndAddOperationsQueueSizeForTableIndicator)
+                .map(metricsProvider::checkAndAddOperationsQueueSizeForTableIndicator)
                 .filter(e -> isBatchFull(e.getValue()) || isTimeoutExpired(e.getValue()))
                 .findAny()
                 .orElse(null);
@@ -203,7 +198,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
             waitTime = batchingParameters.getBatchTimeout();
         }
         log.trace("queue is empty, wait {}ms", waitTime);
-        ProfiledCall operationsWait = profiler.start(batchManagerOperationsAwaitMetric);
+        metricsProvider.startBatchingManagerAwaitOperationsProfiling();
         synchronized (waitForOperationLock) {
             try {
                 if (waitTime <= 0) {
@@ -213,11 +208,11 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
                 log.trace("leave wait section");
             } catch (InterruptedException exc) {
                 log.trace(THREAD_INTERRUPTED_MESSAGE, exc);
-                detachOperationQueueSizeIndicators();
+                metricsProvider.detachOperationQueueSizeIndicators();
                 Thread.currentThread().interrupt();
                 return false;
             } finally {
-                operationsWait.stop();
+                metricsProvider.stopBatchingManagerAwaitOperationsProfiling();
             }
         }
         return true;
@@ -259,40 +254,6 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
             String metricName =
                     "BatchingManagerThread." + batchManagerId + "." + key.toString() + ".operation.spent.in.queue";
             profiler.profiledCall(metricName).call(spentInQueue);
-        }
-    }
-
-    @NotNull
-    private Map.Entry<KeyT, Queue<Operation<PayloadT>>> checkAndAddOperationsQueueSizeForTableIndicator(
-            Map.Entry<KeyT, Queue<Operation<PayloadT>>> entry
-    ) {
-        KeyT mapKey = entry.getKey();
-        if (!operationQueueSizeIndicators.contains(mapKey.toString())) {
-        String metricName =
-                "BatchingManagerThread." + batchManagerId + "." + mapKey + ".operations.queue.size";
-
-            profiler.attachIndicator(metricName, new OperationsQueueSizeProvider(entry.getValue()));
-            operationQueueSizeIndicators.add(mapKey.toString());
-        }
-        return entry;
-    }
-
-    private void detachOperationQueueSizeIndicators() {
-        operationQueueSizeIndicators.forEach(profiler::detachIndicator);
-        operationQueueSizeIndicators.clear();
-    }
-
-    private class OperationsQueueSizeProvider implements IndicationProvider {
-
-        private final Queue<Operation<PayloadT>> operations;
-
-        OperationsQueueSizeProvider(Queue<Operation<PayloadT>> operations) {
-            this.operations = operations;
-        }
-
-        @Override
-        public Long get() {
-            return (long) operations.size();
         }
     }
 

@@ -24,6 +24,9 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
 
     private final ProfiledCall awaitExecution;
 
+    private final String awaitMetricName;
+    private final String handleMetricName;
+
     public BatchProcessor(ConfigT config,
                           List<Operation<PayloadT>> batch,
                           Semaphore batchProcessorsTracker,
@@ -38,7 +41,10 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
         this.batchManagerId = batchManagerId;
         this.profiler = profiler;
 
-        awaitExecution = profiler.start(getMetricName("await"));
+        awaitMetricName = "Batch.processor.await." + batchManagerId + "." + key;
+        handleMetricName = "Batch.processor.hndl." + batchManagerId + "." + key;
+
+        awaitExecution = profiler.start(awaitMetricName);
     }
 
     /**
@@ -58,7 +64,7 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
 
         try {
             List<PayloadT> payloadBatch = batch.stream().map(Operation::getPayload).collect(Collectors.toList());
-            try (ProfiledCall profiledCall = profiler.start(getMetricName("hndl"))) {
+            try (ProfiledCall profiledCall = profiler.start(handleMetricName)) {
                 batchTask.process(config, payloadBatch, key);
                 profiledCall.stop(payloadBatch.size());
             }
@@ -71,9 +77,5 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
             log.trace("release semaphore");
             batchProcessorsTracker.release();
         }
-    }
-
-    private String getMetricName(String suffix) {
-        return "Batch.processor." + suffix + "." + batchManagerId + "." + key;
     }
 }
