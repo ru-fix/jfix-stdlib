@@ -1,8 +1,10 @@
 package ru.fix.stdlib.batching;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.fix.aggregating.profiler.IndicationProvider;
 import ru.fix.aggregating.profiler.ProfiledCall;
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
@@ -40,6 +42,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
 
     private final String batchManagerThreadAwaitMetric;
     private final String batchManagerOperationsAwaitMetric;
+    private final List<String> operationQueueSizeIndicators = new ArrayList<>();
 
     public BatchingManagerThread(
             ConfigT config,
@@ -112,103 +115,142 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
                 return;
             }
 
-            log.trace("Wait available thread in BatchProcessor thread pool");
-            boolean isBatchProcessorThreadAvailable = false;
-            ProfiledCall threadAwaitCall = profiler.start(batchManagerThreadAwaitMetric);
-            while (!isShutdown.get() && !isBatchProcessorThreadAvailable) {
-                try {
-                    isBatchProcessorThreadAvailable = batchProcessorsTracker.tryAcquire(100,
-                            TimeUnit.MILLISECONDS);
-                    if (isBatchProcessorThreadAvailable) {
-                        log.trace("isBatchProcessorThreadAvailable");
-                        batchProcessorsTracker.release();
-                    }
-                } catch (InterruptedException exc) {
-                    log.trace(THREAD_INTERRUPTED_MESSAGE, exc);
-                    threadAwaitCall.stop();
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
-            threadAwaitCall.stop();
+            if (!waitForAvailableBatchProcessThread()) return;
 
             log.trace("Wait for available operations and copy them to local buffer.");
             List<Operation<PayloadT>> buffer = null;
             KeyT key = null;
             while (buffer == null && !isShutdown.get()) {
-                Map.Entry<KeyT, Queue<Operation<PayloadT>>> mappedQueue = pendingTableOperations.entrySet().stream()
-                        .map(this::profileOperationsQueueSizeForTable)
-                        .filter(e -> isBatchFull(e.getValue()) || isTimeoutExpired(e.getValue()))
-                        .findAny()
-                        .orElse(null);
+
+                Map.Entry<KeyT, Queue<Operation<PayloadT>>> mappedQueue = findQueueReadyForProcessing();
 
                 if (mappedQueue != null) {
                     key = mappedQueue.getKey();
-                    Queue<Operation<PayloadT>> operationsQueue = mappedQueue.getValue();
-                    profileTimeSpentInQueueForTable(key, operationsQueue);
-                    buffer = Stream.generate(operationsQueue::poll)
-                            .limit(getBatchSize())
-                            .filter(Objects::nonNull)
-                            .collect(Collectors.toList());
-                    if (batchingParameters.isBlockIfLimitExceeded()) {
-                        synchronized (operationsQueue) {
-                            operationsQueue.notifyAll();
-                        }
-                    }
-                    log.trace("Prepared buffer for \"{}\" table, buffer size {}, queue size {}", key, buffer.size(),
-                            operationsQueue.size());
+                    buffer = prepareBuffer(mappedQueue);
                 } else {
-                    log.trace("calculate time to sleep");
-                    Optional<Long> oldestCreationTimestamp = pendingTableOperations.values().stream()
-                            .map(operations -> Optional.ofNullable(operations.peek()))
-                            .filter(Optional::isPresent)
-                            .map(Optional::get)
-                            .map(Operation::getCreationTimestamp)
-                            .min(Long::compareTo);
-
-                    long waitTime;
-                    if (oldestCreationTimestamp.isPresent()) {
-                        waitTime = batchingParameters.getBatchTimeout() - (System.currentTimeMillis() -
-                                oldestCreationTimestamp.get());
-                        if (waitTime < 0) {
-                            waitTime = 1;
-                        }
-                    } else {
-                        waitTime = batchingParameters.getBatchTimeout();
-                    }
-                    log.trace("queue is empty, wait {}ms", waitTime);
-                    ProfiledCall operationsWait = profiler.start(batchManagerOperationsAwaitMetric);
-                    synchronized (waitForOperationLock) {
-                        try {
-                            if (waitTime <= 0) {
-                                waitTime = 1;
-                            }
-                            waitForOperationLock.wait(waitTime);
-                            log.trace("leave wait section");
-                        } catch (InterruptedException exc) {
-                            log.trace(THREAD_INTERRUPTED_MESSAGE, exc);
-                            Thread.currentThread().interrupt();
-                            return;
-                        } finally {
-                            operationsWait.stop();
-                        }
-                    }
+                    if (!calculateTimeForSleepAndWaitForOperations()) return;
                 }
             }
 
             if (!isShutdown.get() && buffer != null) {
                 log.trace("Start batch processor");
-                batchProcessorPool.execute(new BatchProcessor<>(config,
+                executeBatchForBuffer(buffer, key);
+            }
+        }
+
+        detachOperationQueueSizeIndicators();
+        log.trace("BatchProcessorManager thread stopped.");
+    }
+
+    private void executeBatchForBuffer(List<Operation<PayloadT>> buffer, KeyT key) {
+        batchProcessorPool.execute(
+                new BatchProcessor<>(
+                        config,
                         buffer,
                         batchProcessorsTracker,
                         batchTask,
                         key,
                         batchManagerId,
-                        profiler));
+                        profiler
+                )
+        );
+    }
+
+    private boolean waitForAvailableBatchProcessThread() {
+        log.trace("Wait available thread in BatchProcessor thread pool");
+        boolean isBatchProcessorThreadAvailable = false;
+        ProfiledCall threadAwaitCall = profiler.start(batchManagerThreadAwaitMetric);
+        while (!isShutdown.get() && !isBatchProcessorThreadAvailable) {
+            try {
+                isBatchProcessorThreadAvailable = batchProcessorsTracker.tryAcquire(100,
+                        TimeUnit.MILLISECONDS);
+                if (isBatchProcessorThreadAvailable) {
+                    log.trace("isBatchProcessorThreadAvailable");
+                    batchProcessorsTracker.release();
+                }
+            } catch (InterruptedException exc) {
+                log.trace(THREAD_INTERRUPTED_MESSAGE, exc);
+                threadAwaitCall.stop();
+                Thread.currentThread().interrupt();
+                return false;
             }
         }
-        log.trace("BatchProcessorManager thread stopped.");
+        threadAwaitCall.stop();
+        return true;
     }
+
+    @Nullable
+    private Map.Entry<KeyT, Queue<Operation<PayloadT>>> findQueueReadyForProcessing() {
+        return pendingTableOperations.entrySet().stream()
+                .map(this::checkAndAddOperationsQueueSizeForTableIndicator)
+                .filter(e -> isBatchFull(e.getValue()) || isTimeoutExpired(e.getValue()))
+                .findAny()
+                .orElse(null);
+    }
+
+    private boolean calculateTimeForSleepAndWaitForOperations() {
+        log.trace("calculate time to sleep");
+        Optional<Long> oldestCreationTimestamp = getOldestOperationCreationTimeStamp();
+
+        long waitTime;
+        if (oldestCreationTimestamp.isPresent()) {
+            waitTime = batchingParameters.getBatchTimeout() - (System.currentTimeMillis() -
+                    oldestCreationTimestamp.get());
+            if (waitTime < 0) {
+                waitTime = 1;
+            }
+        } else {
+            waitTime = batchingParameters.getBatchTimeout();
+        }
+        log.trace("queue is empty, wait {}ms", waitTime);
+        ProfiledCall operationsWait = profiler.start(batchManagerOperationsAwaitMetric);
+        synchronized (waitForOperationLock) {
+            try {
+                if (waitTime <= 0) {
+                    waitTime = 1;
+                }
+                waitForOperationLock.wait(waitTime);
+                log.trace("leave wait section");
+            } catch (InterruptedException exc) {
+                log.trace(THREAD_INTERRUPTED_MESSAGE, exc);
+                detachOperationQueueSizeIndicators();
+                Thread.currentThread().interrupt();
+                return false;
+            } finally {
+                operationsWait.stop();
+            }
+        }
+        return true;
+    }
+
+    @NotNull
+    private Optional<Long> getOldestOperationCreationTimeStamp() {
+        return pendingTableOperations.values().stream()
+                .map(operations -> Optional.ofNullable(operations.peek()))
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .map(Operation::getCreationTimestamp)
+                .min(Long::compareTo);
+    }
+
+    private List<Operation<PayloadT>> prepareBuffer(Map.Entry<KeyT, Queue<Operation<PayloadT>>> queueEntry) {
+
+            KeyT key = queueEntry.getKey();
+            Queue<Operation<PayloadT>> operationsQueue = queueEntry.getValue();
+            profileTimeSpentInQueueForTable(key, operationsQueue);
+            List<Operation<PayloadT>> buffer = Stream.generate(operationsQueue::poll)
+                    .limit(getBatchSize())
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            if (batchingParameters.isBlockIfLimitExceeded()) {
+                synchronized (operationsQueue) {
+                    operationsQueue.notifyAll();
+                }
+            }
+            log.trace("Prepared buffer for \"{}\" table, buffer size {}, queue size {}", key, buffer.size(),
+                    operationsQueue.size());
+            return buffer;
+        }
 
     private void profileTimeSpentInQueueForTable(KeyT key, Queue<Operation<PayloadT>> operationsQueue) {
         Operation<PayloadT> firstOperation = operationsQueue.peek();
@@ -221,15 +263,37 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
     }
 
     @NotNull
-    private Map.Entry<KeyT, Queue<Operation<PayloadT>>> profileOperationsQueueSizeForTable(
+    private Map.Entry<KeyT, Queue<Operation<PayloadT>>> checkAndAddOperationsQueueSizeForTableIndicator(
             Map.Entry<KeyT, Queue<Operation<PayloadT>>> entry
     ) {
         KeyT mapKey = entry.getKey();
+        if (!operationQueueSizeIndicators.contains(mapKey.toString())) {
         String metricName =
                 "BatchingManagerThread." + batchManagerId + "." + mapKey.toString() + ".operations.queue.size";
-        long operationsSize = pendingTableOperations.get(mapKey).size();
-        profiler.profiledCall(metricName).call((double) operationsSize);
+
+            profiler.attachIndicator(metricName, new OperationsQueueSizeProvider(entry.getValue()));
+            operationQueueSizeIndicators.add(mapKey.toString());
+        }
         return entry;
+    }
+
+    private void detachOperationQueueSizeIndicators() {
+        operationQueueSizeIndicators.forEach(profiler::detachIndicator);
+        operationQueueSizeIndicators.clear();
+    }
+
+    private class OperationsQueueSizeProvider implements IndicationProvider {
+
+        private final Queue<Operation<PayloadT>> operations;
+
+        OperationsQueueSizeProvider(Queue<Operation<PayloadT>> operations) {
+            this.operations = operations;
+        }
+
+        @Override
+        public Long get() {
+            return (long) operations.size();
+        }
     }
 
     private int getBatchSize() {
