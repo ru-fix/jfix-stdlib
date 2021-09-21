@@ -269,7 +269,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
         KeyT mapKey = entry.getKey();
         if (!operationQueueSizeIndicators.contains(mapKey.toString())) {
         String metricName =
-                "BatchingManagerThread." + batchManagerId + "." + mapKey.toString() + ".operations.queue.size";
+                "BatchingManagerThread." + batchManagerId + "." + mapKey + ".operations.queue.size";
 
             profiler.attachIndicator(metricName, new OperationsQueueSizeProvider(entry.getValue()));
             operationQueueSizeIndicators.add(mapKey.toString());
