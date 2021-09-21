@@ -22,6 +22,8 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
     private final Profiler profiler;
     private final String batchManagerId;
 
+    private final ProfiledCall awaitExecution;
+
     public BatchProcessor(ConfigT config,
                           List<Operation<PayloadT>> batch,
                           Semaphore batchProcessorsTracker,
@@ -35,6 +37,8 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
         this.key = key;
         this.batchManagerId = batchManagerId;
         this.profiler = profiler;
+
+        awaitExecution = profiler.start(getMetricName("await"));
     }
 
     /**
@@ -48,11 +52,13 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
         } catch (InterruptedException exc) {
             log.error("BatchProcessor thread interrupted", exc);
             Thread.currentThread().interrupt();
+        } finally {
+            awaitExecution.stop();
         }
 
         try {
             List<PayloadT> payloadBatch = batch.stream().map(Operation::getPayload).collect(Collectors.toList());
-            try (ProfiledCall profiledCall = profiler.start("Batch.processor.hndl." + batchManagerId)) {
+            try (ProfiledCall profiledCall = profiler.start(getMetricName("hndl"))) {
                 batchTask.process(config, payloadBatch, key);
                 profiledCall.stop(payloadBatch.size());
             }
@@ -65,5 +71,9 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
             log.trace("release semaphore");
             batchProcessorsTracker.release();
         }
+    }
+
+    private String getMetricName(String suffix) {
+        return "Batch.processor." + suffix + "." + batchManagerId + "." + key;
     }
 }

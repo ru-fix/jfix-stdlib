@@ -1,21 +1,16 @@
 package ru.fix.stdlib.batching;
 
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.fix.aggregating.profiler.Identity;
+import ru.fix.aggregating.profiler.ProfiledCall;
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.stdlib.concurrency.threads.NamedExecutors;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Queue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -53,7 +48,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
 
 
         batchProcessorPool = NamedExecutors.newDynamicPool(
-                "batching-manager",
+                "batching-manager-" + batchManagerId,
                 DynamicProperty.of(batchingParameters.getBatchThreads()),
                 profiler
         );
@@ -104,6 +99,9 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
     @Override
     public void run() {
         log.trace("BatchProcessorManager thread started.");
+
+        Map<KeyT, String> indicatorMap = new HashMap<>();
+
         while (!isShutdown.get()) {
 
             log.trace("Check if thread interrupted");
@@ -114,6 +112,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
 
             log.trace("Wait available thread in BatchProcessor thread pool");
             boolean isBatchProcessorThreadAvailable = false;
+            ProfiledCall threadAwaitCall = profiler.start("BatchingManagerThread_batch_processor_thread_await");
             while (!isShutdown.get() && !isBatchProcessorThreadAvailable) {
                 try {
                     isBatchProcessorThreadAvailable = batchProcessorsTracker.tryAcquire(100,
@@ -128,19 +127,22 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
                     return;
                 }
             }
+            threadAwaitCall.stop();
 
             log.trace("Wait for available operations and copy them to local buffer.");
             List<Operation<PayloadT>> buffer = null;
             KeyT key = null;
             while (buffer == null && !isShutdown.get()) {
                 Map.Entry<KeyT, Queue<Operation<PayloadT>>> mappedQueue = pendingTableOperations.entrySet().stream()
-                        .filter(e -> isBathFull(e.getValue()) || isTimeoutExpired(e.getValue()))
+                        .map( entry -> checkAndAttachIndicator(indicatorMap, entry))
+                        .filter(e -> isBatchFull(e.getValue()) || isTimeoutExpired(e.getValue()))
                         .findAny()
                         .orElse(null);
 
                 if (mappedQueue != null) {
                     key = mappedQueue.getKey();
                     Queue<Operation<PayloadT>> operationsQueue = mappedQueue.getValue();
+                    profileTimeSpentInQueueForTable(key, operationsQueue);
                     buffer = Stream.generate(operationsQueue::poll)
                             .limit(getBatchSize())
                             .filter(Objects::nonNull)
@@ -154,7 +156,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
                             operationsQueue.size());
                 } else {
                     log.trace("calculate time to sleep");
-                    Optional<Long> oldestCreationTimestatmp = pendingTableOperations.values().stream()
+                    Optional<Long> oldestCreationTimestamp = pendingTableOperations.values().stream()
                             .map(operations -> Optional.ofNullable(operations.peek()))
                             .filter(Optional::isPresent)
                             .map(Optional::get)
@@ -162,9 +164,9 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
                             .min(Long::compareTo);
 
                     long waitTime;
-                    if (oldestCreationTimestatmp.isPresent()) {
+                    if (oldestCreationTimestamp.isPresent()) {
                         waitTime = batchingParameters.getBatchTimeout() - (System.currentTimeMillis() -
-                                oldestCreationTimestatmp.get());
+                                oldestCreationTimestamp.get());
                         if (waitTime < 0) {
                             waitTime = 1;
                         }
@@ -172,6 +174,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
                         waitTime = batchingParameters.getBatchTimeout();
                     }
                     log.trace("queue is empty, wait {}ms", waitTime);
+                    ProfiledCall operationsWait = profiler.start("BatchingManagerThread_operations_await");
                     synchronized (waitForOperationLock) {
                         try {
                             if (waitTime <= 0) {
@@ -181,8 +184,11 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
                             log.trace("leave wait section");
                         } catch (InterruptedException exc) {
                             log.trace(THREAD_INTERRUPTED_MESSAGE, exc);
+                            detachIndicators(indicatorMap);
                             Thread.currentThread().interrupt();
                             return;
+                        } finally {
+                            operationsWait.stop();
                         }
                     }
                 }
@@ -199,7 +205,42 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
                         profiler));
             }
         }
+
+        detachIndicators(indicatorMap);
         log.trace("BatchProcessorManager thread stopped.");
+    }
+
+    private void profileTimeSpentInQueueForTable(KeyT key, Queue<Operation<PayloadT>> operationsQueue) {
+        Operation<PayloadT> firstOperation = operationsQueue.peek();
+        if (firstOperation != null) {
+            long spentInQueue = System.currentTimeMillis() - firstOperation.getCreationTimestamp();
+            Map<String, String> tags = new HashMap<>();
+            tags.put("table", key.toString());
+            Identity identity = new Identity("BatchingManagerThread_operation_spent_in_queue", tags);
+            profiler.profiledCall(identity).call(spentInQueue);
+        }
+    }
+
+    @NotNull
+    private Map.Entry<KeyT, Queue<Operation<PayloadT>>> checkAndAttachIndicator(
+            Map<KeyT, String> indicatorMap,
+            Map.Entry<KeyT, Queue<Operation<PayloadT>>> entry
+    ) {
+        KeyT mapKey = entry.getKey();
+        String indicatorName = mapKey.toString() + "_size";
+        if (!indicatorMap.containsKey(mapKey)) {
+            profiler.attachIndicator(
+                    indicatorName,
+                    () -> (long) pendingTableOperations.get(mapKey).size()
+            );
+          indicatorMap.put(mapKey, indicatorName);
+      }
+        return entry;
+    }
+
+    private void detachIndicators(Map<KeyT, String> indicatorMap) {
+        indicatorMap.values().forEach(profiler::detachIndicator);
+        indicatorMap.clear();
     }
 
     private int getBatchSize() {
@@ -207,7 +248,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
     }
 
 
-    private boolean isBathFull(Queue<Operation<PayloadT>> buffer) {
+    private boolean isBatchFull(Queue<Operation<PayloadT>> buffer) {
         return buffer.size() >= batchingParameters.getBatchSize();
     }
 
