@@ -1,15 +1,16 @@
 package ru.fix.stdlib.batching;
 
-import org.jetbrains.annotations.NotNull;
 import ru.fix.aggregating.profiler.IndicationProvider;
-import ru.fix.aggregating.profiler.ProfiledCall;
 import ru.fix.aggregating.profiler.Profiler;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Queue;
+import java.util.function.Supplier;
 
+/** This class used in BatchingManagerThread to measure some useful metrics
+ *  and designed for single threaded usage only.
+ */
 public class BatchingManagerMetricsProvider {
 
     private final String batchManagerId;
@@ -17,8 +18,6 @@ public class BatchingManagerMetricsProvider {
     private final String batchProcessorThreadAwaitMetric;
     private final String batchManagerOperationsAwaitMetric;
     private final List<String> operationQueueSizeIndicatorsList = new ArrayList<>();
-    private ProfiledCall batchProcessorThreadAwaitProfiledCall;
-    private ProfiledCall batchingManagerOperationsAwaitProfiledCall;
 
     BatchingManagerMetricsProvider(String batchManagerId, Profiler profiler) {
         this.batchManagerId = batchManagerId;
@@ -29,36 +28,32 @@ public class BatchingManagerMetricsProvider {
         this.profiler = profiler;
     }
 
-
-    public void startBatchProcessorThreadAwaitProfiling() {
-        this.batchProcessorThreadAwaitProfiledCall = profiler.start(batchProcessorThreadAwaitMetric);
+    public Boolean profileBatchProcessorAwaitThread(Supplier<Boolean> awaiter) {
+        return profiler.profile(this.batchProcessorThreadAwaitMetric, awaiter);
     }
 
-    public void stopBatchManagerThreadAwaitProfiling() {
-        this.batchProcessorThreadAwaitProfiledCall.stop();
+    public Boolean profileBatchManagerThreadAwaitOperation(Supplier<Boolean> awaiter) {
+        return profiler.profile(this.batchManagerOperationsAwaitMetric, awaiter);
     }
 
-    public void startBatchingManagerAwaitOperationsProfiling() {
-        this.batchingManagerOperationsAwaitProfiledCall = profiler.start(batchManagerOperationsAwaitMetric);
-    }
-
-    public void stopBatchingManagerAwaitOperationsProfiling() {
-        this.batchingManagerOperationsAwaitProfiledCall.stop();
-    }
-
-    @NotNull
-    public <KeyT, PayloadT> Map.Entry<KeyT, Queue<Operation<PayloadT>>> checkAndAddOperationsQueueSizeForTableIndicator(
-            Map.Entry<KeyT, Queue<Operation<PayloadT>>> entry
+    public void createOperationsQueueSizeIndicatorIfNeeded(
+            String key,
+            Queue<?> operations
     ) {
-        KeyT mapKey = entry.getKey();
-        if (!operationQueueSizeIndicatorsList.contains(mapKey.toString())) {
+        if (!operationQueueSizeIndicatorsList.contains(key)) {
             String metricName =
-                    "BatchingManagerThread." + batchManagerId + "." + mapKey + ".operations.queue.size";
+                    "BatchingManagerThread." + batchManagerId + "." + key + ".operations.queue.size";
 
-            profiler.attachIndicator(metricName, new OperationsQueueSizeProvider<>(entry.getValue()));
-            operationQueueSizeIndicatorsList.add(mapKey.toString());
+            profiler.attachIndicator(metricName, new OperationsQueueSizeProvider(operations));
+            operationQueueSizeIndicatorsList.add(key);
         }
-        return entry;
+    }
+
+    public void profileTimeOperationSpentInQueue(long creationTimestamp, String key) {
+        long spentInQueue = System.currentTimeMillis() - creationTimestamp;
+        String metricName =
+                "BatchingManagerThread." + batchManagerId + "." + key + ".operation.spent.in.queue";
+        profiler.profiledCall(metricName).call(spentInQueue);
     }
 
     public void detachOperationQueueSizeIndicators() {
@@ -66,11 +61,11 @@ public class BatchingManagerMetricsProvider {
         operationQueueSizeIndicatorsList.clear();
     }
 
-    private static class OperationsQueueSizeProvider<PayloadT> implements IndicationProvider {
+    private static class OperationsQueueSizeProvider implements IndicationProvider {
 
-        private final Queue<Operation<PayloadT>> operations;
+        private final Queue<?> operations;
 
-        OperationsQueueSizeProvider(Queue<Operation<PayloadT>> operations) {
+        OperationsQueueSizeProvider(Queue<?> operations) {
             this.operations = operations;
         }
 
