@@ -7,11 +7,11 @@ import org.slf4j.LoggerFactory;
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.stdlib.concurrency.threads.NamedExecutors;
+import ru.fix.stdlib.concurrency.threads.ProfiledThreadPoolExecutor;
 
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
@@ -25,7 +25,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
 
     private final AtomicBoolean isShutdown = new AtomicBoolean();
     private final ExecutorService batchProcessorManagerExecutor;
-    private final ThreadPoolExecutor batchProcessorPool;
+    private final ProfiledThreadPoolExecutor batchProcessorPool;
     private final BatchingParameters batchingParameters;
     private final Map<KeyT, Queue<Operation<PayloadT>>> pendingTableOperations;
 
@@ -291,27 +291,8 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
          * guard updating batchProcessorPool size
          */
         synchronized (batchProcessorPool) {
-
             batchingParameters.setBatchThreads(newThreadCount);
-
-            int difference = newThreadCount - batchProcessorPool.getCorePoolSize();
-
-            if (difference > 0) {
-                /*
-                 * increase pool size to abs(difference)
-                 */
-                batchProcessorPool.setCorePoolSize(newThreadCount);
-                batchProcessorPool.setMaximumPoolSize(newThreadCount);
-                batchProcessorsTracker.release(difference);
-
-            } else if (difference < 0) {
-                /*
-                 * decrease pool size to abs(difference)
-                 */
-                batchProcessorsTracker.acquire(-difference);
-                batchProcessorPool.setCorePoolSize(newThreadCount);
-                batchProcessorPool.setMaximumPoolSize(newThreadCount);
-            }
+            batchProcessorPool.setMaxPoolSize(newThreadCount);
         }
     }
 }

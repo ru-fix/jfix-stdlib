@@ -1,39 +1,49 @@
 package ru.fix.stdlib.batching;
 
+import ru.fix.aggregating.profiler.Identity;
 import ru.fix.aggregating.profiler.IndicationProvider;
 import ru.fix.aggregating.profiler.Profiler;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
 import java.util.Queue;
 import java.util.function.Supplier;
 
-/** This class used in BatchingManagerThread to measure some useful metrics
- *  and designed for single threaded usage only.
+/**
+ * This class used in BatchingManagerThread to measure some useful metrics
+ * and designed for single threaded usage only.
  */
 public class BatchingManagerMetricsProvider {
 
     private final String batchManagerId;
     private final Profiler profiler;
-    private final String batchProcessorThreadAwaitMetric;
-    private final String batchManagerOperationsAwaitMetric;
-    private final List<String> operationQueueSizeIndicatorsList = new ArrayList<>();
+    private final Identity batchProcessorThreadAwaitIdentity;
+    private final Identity batchManagerOperationsAwaitIdentity;
+    private final HashSet<String> operationQueueSizeIndicatorsList = new HashSet<>();
+
+    public static final String BATCHING_MANAGER_ID_TAG_NAME = "batchingManagerId";
+    public static final String BATCHING_MANAGER_KEY_TAG_NAME = "key";
 
     BatchingManagerMetricsProvider(String batchManagerId, Profiler profiler) {
         this.batchManagerId = batchManagerId;
 
-        this.batchProcessorThreadAwaitMetric =
-                "BatchingManagerThread." + batchManagerId + ".batch_processor_thread_await";
-        this.batchManagerOperationsAwaitMetric = "BatchingManagerThread." + batchManagerId + ".operations_await";
+        this.batchProcessorThreadAwaitIdentity = new Identity(
+                "BatchingManagerThread.batch.processor.thread.await",
+                BATCHING_MANAGER_ID_TAG_NAME, batchManagerId
+        );
+
+        this.batchManagerOperationsAwaitIdentity = new Identity(
+                "BatchingManagerThread.operations.await",
+                BATCHING_MANAGER_ID_TAG_NAME, batchManagerId
+        );
         this.profiler = profiler;
     }
 
     public Boolean profileBatchProcessorAwaitThread(Supplier<Boolean> awaiter) {
-        return profiler.profile(this.batchProcessorThreadAwaitMetric, awaiter);
+        return profiler.profiledCall(batchProcessorThreadAwaitIdentity).profile(awaiter);
     }
 
     public Boolean profileBatchManagerThreadAwaitOperation(Supplier<Boolean> awaiter) {
-        return profiler.profile(this.batchManagerOperationsAwaitMetric, awaiter);
+        return profiler.profiledCall(batchManagerOperationsAwaitIdentity).profile(awaiter);
     }
 
     public void createOperationsQueueSizeIndicatorIfNeeded(
@@ -41,24 +51,31 @@ public class BatchingManagerMetricsProvider {
             Queue<?> operations
     ) {
         if (!operationQueueSizeIndicatorsList.contains(key)) {
-            String metricName =
-                    "BatchingManagerThread." + batchManagerId + "." + key + ".operations.queue.size";
-
-            profiler.attachIndicator(metricName, new OperationsQueueSizeProvider(operations));
+            Identity indicatorIdentity =
+                    buildIdentityWithKey("BatchingManager.operations.queue.size", key);
+            profiler.attachIndicator(indicatorIdentity, new OperationsQueueSizeProvider(operations));
             operationQueueSizeIndicatorsList.add(key);
         }
     }
 
     public void profileTimeOperationSpentInQueue(long creationTimestamp, String key) {
         long spentInQueue = System.currentTimeMillis() - creationTimestamp;
-        String metricName =
-                "BatchingManagerThread." + batchManagerId + "." + key + ".operation.spent.in.queue";
-        profiler.profiledCall(metricName).call(spentInQueue);
+        Identity identity =
+                buildIdentityWithKey("BatchingManager.operation.spent.in.queue", key);
+        profiler.profiledCall(identity).call(spentInQueue);
     }
 
     public void detachOperationQueueSizeIndicators() {
         operationQueueSizeIndicatorsList.forEach(profiler::detachIndicator);
         operationQueueSizeIndicatorsList.clear();
+    }
+
+    private Identity buildIdentityWithKey(String name, String key) {
+        return new Identity(
+                name,
+                BATCHING_MANAGER_ID_TAG_NAME, batchManagerId,
+                BATCHING_MANAGER_KEY_TAG_NAME, key
+        );
     }
 
     private static class OperationsQueueSizeProvider implements IndicationProvider {
