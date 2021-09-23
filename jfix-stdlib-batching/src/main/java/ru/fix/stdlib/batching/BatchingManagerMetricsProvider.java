@@ -59,10 +59,9 @@ public class BatchingManagerMetricsProvider {
     }
 
     public void profileTimeOperationSpentInQueue(long creationTimestamp, String key) {
-        long spentInQueue = System.currentTimeMillis() - creationTimestamp;
         Identity identity =
                 buildIdentityWithKey("BatchingManager.operation.spent.in.queue", key);
-        profiler.profiledCall(identity).call(spentInQueue);
+        profiler.profiledCall(identity).call(creationTimestamp);
     }
 
     public void detachOperationQueueSizeIndicators() {
