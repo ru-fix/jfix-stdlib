@@ -57,7 +57,7 @@ class ProfiledPoolsTest {
 
         pool.shutdown()
 
-        assertTrue { pool.awaitTermination(10, TimeUnit.SECONDS) }
+        assertTrue { pool.awaitTermination(20, TimeUnit.SECONDS) }
 
         assert.that(100, equalTo(taskCompleted.sum()))
 
