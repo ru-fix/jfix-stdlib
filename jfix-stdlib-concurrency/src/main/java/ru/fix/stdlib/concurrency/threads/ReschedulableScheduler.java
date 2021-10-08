@@ -62,10 +62,11 @@ public class ReschedulableScheduler implements AutoCloseable {
     public Optional<ScheduledFuture<?>> scheduleIfNotShutdown(DynamicProperty<Schedule> scheduleSupplier,
                                                     DynamicProperty<Long> startDelay,
                                                     Runnable task) {
-        if (!shutdownReadLock.tryLock() || isShutdown) {
-            return Optional.empty();
-        }
+        boolean lockAcquired = shutdownReadLock.tryLock();
         try {
+            if (!lockAcquired || isShutdown) {
+                return Optional.empty();
+            }
             SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
                     scheduleSupplier,
                     startDelay,
