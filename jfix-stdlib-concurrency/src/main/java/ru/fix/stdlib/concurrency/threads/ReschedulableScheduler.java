@@ -7,6 +7,7 @@ import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.dynamic.property.api.PropertySubscription;
 
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -55,13 +56,14 @@ public class ReschedulableScheduler implements AutoCloseable {
      * Same as {@link #schedule(DynamicProperty, DynamicProperty, Runnable)}
      * but doesn't throw exception if {@link ReschedulableScheduler#shutdown()} was executed
      *
-     * @return result task from executionService or null if {@link ReschedulableScheduler#shutdown()} was executed
+     * @return result task from executionService
+     * or Optional.empty if {@link ReschedulableScheduler#shutdown()} was executed
      */
-    public ScheduledFuture<?> scheduleIfNotShutdown(DynamicProperty<Schedule> scheduleSupplier,
+    public Optional<ScheduledFuture<?>> scheduleIfNotShutdown(DynamicProperty<Schedule> scheduleSupplier,
                                                     DynamicProperty<Long> startDelay,
                                                     Runnable task) {
         if (!shutdownReadLock.tryLock() || isShutdown) {
-            return null;
+            return Optional.empty();
         }
         try {
             SelfSchedulableTaskWrapper taskWrapper = new SelfSchedulableTaskWrapper(
@@ -74,7 +76,7 @@ public class ReschedulableScheduler implements AutoCloseable {
             );
 
             activeTasks.add(taskWrapper);
-            return taskWrapper.launch();
+            return Optional.of(taskWrapper.launch());
         } finally {
             shutdownReadLock.unlock();
         }
@@ -90,14 +92,14 @@ public class ReschedulableScheduler implements AutoCloseable {
                                        DynamicProperty<Long> startDelay,
                                        Runnable task) {
 
-        ScheduledFuture<?> scheduledFuture = scheduleIfNotShutdown(scheduleSupplier, startDelay, task);
+        Optional<ScheduledFuture<?>> scheduledFuture = scheduleIfNotShutdown(scheduleSupplier, startDelay, task);
 
-        if (scheduledFuture == null) {
+        if (!scheduledFuture.isPresent()) {
             throw new IllegalStateException("ReschedulableScheduler is shutdown and can not schedule new task." +
                     " Task: " + task);
         }
 
-        return scheduledFuture;
+        return scheduledFuture.get();
     }
 
     /**
