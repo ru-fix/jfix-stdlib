@@ -59,7 +59,7 @@ class ProfiledPoolsTest {
 
         assertTrue { pool.awaitTermination(20, TimeUnit.SECONDS) }
 
-        assert.that(100, equalTo(taskCompleted.sum()))
+        assert.that(100L, equalTo(taskCompleted.sum()))
 
         reporter.buildReportAndReset().let { report ->
             println(report)
