@@ -79,7 +79,7 @@ public class ReschedulableScheduler implements AutoCloseable {
             activeTasks.add(taskWrapper);
             return Optional.of(taskWrapper.launch());
         } finally {
-            shutdownReadLock.unlock();
+            if(lockAcquired) shutdownReadLock.unlock();
         }
     }
 
