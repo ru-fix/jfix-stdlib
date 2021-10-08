@@ -1,9 +1,10 @@
 object Vers {
-    const val kotlin = "1.3.72"
+    const val kotlin = "1.5.31"
+    const val gradle_kotlin = "1.5.21"
     const val kotlin_coroutines = "1.3.8"
     const val sl4j = "1.7.25"
-    const val dokkav = "0.9.18"
-    const val gradle_release_plugin = "1.3.16"
+    const val dokkav = "1.4.30"
+    const val gradle_release_plugin = "1.4.3"
     const val junit = "5.5.2"
     const val hamkrest = "1.4.2.2"
 
@@ -26,6 +27,9 @@ object Libs {
     const val kotlin_reflect = "org.jetbrains.kotlin:kotlin-reflect:${Vers.kotlin}"
     const val kotlinx_coroutines_core = "org.jetbrains.kotlinx:kotlinx-coroutines-core:${Vers.kotlin_coroutines}"
     const val kotlinx_coroutines_jdk8 = "org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:${Vers.kotlin_coroutines}"
+
+    const val gradle_kotlin_stdlib = "org.jetbrains.kotlin:kotlin-stdlib:${Vers.gradle_kotlin}"
+    const val gradle_kotlin_jdk8 = "org.jetbrains.kotlin:kotlin-stdlib-jdk8:${Vers.gradle_kotlin}"
 
     const val gradle_release_plugin = "ru.fix:gradle-release-plugin:${Vers.gradle_release_plugin}"
     const val dokka_gradle_plugin = "org.jetbrains.dokka:dokka-gradle-plugin:${Vers.dokkav}"

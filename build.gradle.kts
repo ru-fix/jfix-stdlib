@@ -10,16 +10,14 @@ import kotlin.reflect.KProperty
 
 buildscript {
     repositories {
-        jcenter()
         mavenCentral()
         mavenLocal()
     }
     dependencies {
         classpath(Libs.gradle_release_plugin)
         classpath(Libs.dokka_gradle_plugin)
-        classpath(Libs.kotlin_stdlib)
-        classpath(Libs.kotlin_jdk8)
-        classpath(Libs.kotlin_reflect)
+        classpath(Libs.gradle_kotlin_stdlib)
+        classpath(Libs.gradle_kotlin_jdk8)
         classpath(Libs.jmh_gradle_plugin)
     }
 }
