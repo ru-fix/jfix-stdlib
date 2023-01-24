@@ -9,11 +9,11 @@ dependencies {
     api(Libs.dynamic_property)
     api(Libs.aggregating_profiler)
 
-    testImplementation(Libs.kotlin_jdk8)
-    testImplementation(Libs.kotlin_stdlib)
-    testImplementation(Libs.kotlin_reflect)
-    testImplementation(Libs.kotlinx_coroutines_core)
-    testImplementation(Libs.kotlinx_coroutines_jdk8)
+    implementation(Libs.kotlin_jdk8)
+    implementation(Libs.kotlin_stdlib)
+    implementation(Libs.kotlin_reflect)
+    implementation(Libs.kotlinx_coroutines_core)
+    implementation(Libs.kotlinx_coroutines_jdk8)
 
     testImplementation(Libs.hamcrest)
     testImplementation(Libs.mockito)

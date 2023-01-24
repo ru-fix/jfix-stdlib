@@ -7,7 +7,6 @@ import ru.fix.aggregating.profiler.ProfiledCall
 import ru.fix.aggregating.profiler.Profiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import ru.fix.dynamic.property.api.PropertySubscription
-import ru.fix.stdlib.ratelimiter.RateLimitedDispatcher.*
 import java.lang.invoke.MethodHandles
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.*
@@ -41,8 +40,8 @@ class RateLimitedDispatcherKt(
     private val state = AtomicReference<State>()
 
     private val rateLimiter: RateLimiter
-    private val taskQueue = LinkedBlockingQueue<Task<*>>()
-    private val commandQueue = LinkedBlockingQueue<Command>()
+    private val taskQueue = LinkedBlockingQueue<Task<Any?>>()
+    private val commandQueue = LinkedBlockingQueue<Command?>()
 
     private val thread: Thread
     private val name: String
@@ -107,25 +106,23 @@ class RateLimitedDispatcherKt(
         taskQueue.add(AwakeFromWaitingQueueTask())
     }
 
-    fun <T> compose(supplier: Supplier<CompletableFuture<T>>): CompletableFuture<T> {
-        return submit(
-            Supplier { supplier.get().whenComplete { _, _ -> asyncOperationCompleted() } }
-        ).thenCompose { cf -> cf }
+    fun <T> compose(supplier: () -> CompletableFuture<T>): CompletableFuture<T> {
+        return submit { supplier.invoke().whenComplete { _, _ -> asyncOperationCompleted() } }.thenCompose { cf -> cf }
     }
 
     fun <AsyncResultT> compose(
-        asyncOperation: AsyncOperation<AsyncResultT>,
-        asyncResultSubscriber: AsyncResultSubscriber<AsyncResultT>
-    ): CompletableFuture<AsyncResultT>? {
-        return submit<AsyncResultT>(Supplier {
+        asyncOperation: () -> AsyncResultT,
+        asyncResultSubscriber: (asyncResult: AsyncResultT, asyncResultCallback: AsyncResultCallback?) -> Unit
+    ): CompletableFuture<AsyncResultT> {
+        return submit<AsyncResultT> {
             val asyncResult = asyncOperation.invoke()
-            asyncResultSubscriber.subscribe(asyncResult, object: AsyncResultCallback {
+            asyncResultSubscriber.invoke(asyncResult, object : AsyncResultCallback {
                 override fun onAsyncResultCompleted() {
                     asyncOperationCompleted()
                 }
-            } )
+            })
             asyncResult
-        })
+        }
     }
 
     /**
@@ -138,7 +135,7 @@ class RateLimitedDispatcherKt(
      * @param supplier task to execute and retrieve result
      * @return feature which represent result of task execution
      */
-    private fun <T> submit(supplier: Supplier<T>): CompletableFuture<T> {
+    private fun <T> submit(supplier: () -> T): CompletableFuture<T> {
         val result = CompletableFuture<T>()
         val state = state.get()
         if (state != State.RUNNING) {
@@ -149,7 +146,7 @@ class RateLimitedDispatcherKt(
             return result
         }
         val queueWaitTime = profiler.start("queue_wait")
-        taskQueue.add(Task(result, supplier, queueWaitTime))
+        taskQueue.add(Task(result, supplier, queueWaitTime) as Task<Any?>)
         return result
     }
 
@@ -253,14 +250,14 @@ class RateLimitedDispatcherKt(
                 "RateLimitedDispatcher [$name] interrupted"
             }
             taskQueue.forEach(Consumer { task: Task<*> ->
-                task.getFuture().completeExceptionally(RejectedExecutionException(taskExceptionText))
-                task.getQueueWaitTimeCall().close()
+                task.future.completeExceptionally(RejectedExecutionException(taskExceptionText))
+                task.queueWaitTimeCall.close()
             })
         }
 
 //        @kotlin.Throws(InterruptedException::class)
         private fun processCommandsIfExist() {
-            var command: Command = commandQueue.poll()
+            var command: Command? = commandQueue.poll()
             while (command != null) {
                 command.apply()
                 command = commandQueue.poll()
@@ -269,12 +266,12 @@ class RateLimitedDispatcherKt(
 
 //        @kotlin.Throws(InterruptedException::class)
         private fun waitForTaskInQueueAndProcess() {
-            val task: Task<*> = taskQueue.take()
+            val task: Task<Any?> = taskQueue.take()
             if (task is AwakeFromWaitingQueueTask) {
                 return
             }
-            task.getQueueWaitTimeCall().stop()
-            val future = task.getFuture()
+            task.queueWaitTimeCall.stop()
+            val future = task.future
             try {
                 if (windowSize > 0) {
                     profiler.start("acquire_window").use { acquireWindowTime ->
@@ -306,7 +303,7 @@ class RateLimitedDispatcherKt(
                 asyncOperationStarted()
                 val result: Any = profiler.profile(
                     "supply_operation",
-                    Supplier { task.getSupplier().get() }
+                    Supplier { task.supplier.invoke() }
                 )!!
 
                 future.complete(result)
@@ -326,25 +323,25 @@ class RateLimitedDispatcherKt(
 
     private open class Task<T>(
         val future: CompletableFuture<T>,
-        val supplier: Supplier<T>,
+        val supplier: () -> T,
         val queueWaitTimeCall: ProfiledCall
     ) {
-        fun getSupplier(): Supplier<T> {
-            return supplier
-        }
+//        fun getSupplier(): () -> T {
+//            return supplier
+//        }
 
-        fun getFuture(): CompletableFuture<T> {
-            return future
-        }
+//        fun getFuture(): CompletableFuture<T> {
+//            return future
+//        }
 
-        fun getQueueWaitTimeCall(): ProfiledCall {
-            return queueWaitTimeCall
-        }
+//        fun getQueueWaitTimeCall(): ProfiledCall {
+//            return queueWaitTimeCall
+//        }
     }
 
-    private class AwakeFromWaitingQueueTask : Task<Void> (
-        CompletableFuture<Void>(),
-        Supplier<Void> { null },
+    private class AwakeFromWaitingQueueTask : Task<Any?> (
+        CompletableFuture(),
+        { null },
         NoopProfiledCall()
     )
 
