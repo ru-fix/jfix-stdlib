@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.Consumer
 import java.util.function.Supplier
+import kotlin.math.max
 
 /**
  * Manages tasks execution with given rate and window.
@@ -21,6 +22,14 @@ import java.util.function.Supplier
  * Window size specify how many async operations with uncompleted result allowed.
  * When Window or Rate restriction is reached, dispatcher will stop to process requests and enqueue them in umbound queue.
  * Disaptcher executes all operations in single dedicated thread.
+ *
+ * @param name           name of dispatcher - will be used in metrics and worker's thread name
+ * @param rateLimiter    rate limiter, which provides rate of operation
+ * @param windowSize     ho many async operations with uncompleted result are allowed in dispatcher
+ * @param closingTimeout max amount of time (in milliseconds) to wait for pending operations during shutdown.
+ *                       If parameter equals 0 then dispatcher will not wait pending operations during closing process.
+ *                       Any negative number will be interpreted as 0.
+ *
  */
 class RateLimitedDispatcherKt(
     name: String,
@@ -63,13 +72,6 @@ class RateLimitedDispatcherKt(
 
     /**
      * Creates new dispatcher instance
-     *
-     * @param name           name of dispatcher - will be used in metrics and worker's thread name
-     * @param rateLimiter    rate limiter, which provides rate of operation
-     * @param windowSize     ho many async operations with uncompleted result are allowed in dispatcher
-     * @param closingTimeout max amount of time (in milliseconds) to wait for pending operations during shutdown.
-     *                       If parameter equals 0 then dispatcher will not wait pending operations during closing process.
-     *                       Any negative number will be interpreted as 0.
      */
     init {
         this.name = name
@@ -107,20 +109,18 @@ class RateLimitedDispatcherKt(
     }
 
     fun <T> compose(supplier: () -> CompletableFuture<T>): CompletableFuture<T> {
-        return submit { supplier.invoke().whenComplete { _, _ -> asyncOperationCompleted() } }.thenCompose { cf -> cf }
+        return submit {
+            supplier.invoke().whenComplete { _, _ -> asyncOperationCompleted() }
+        }.thenCompose { cf -> cf }
     }
 
     fun <AsyncResultT> compose(
         asyncOperation: () -> AsyncResultT,
-        asyncResultSubscriber: (asyncResult: AsyncResultT, asyncResultCallback: AsyncResultCallback?) -> Unit
+        asyncResultSubscriber: (asyncResult: AsyncResultT, asyncResultCallback: () -> Unit) -> Unit
     ): CompletableFuture<AsyncResultT> {
-        return submit<AsyncResultT> {
+        return submit {
             val asyncResult = asyncOperation.invoke()
-            asyncResultSubscriber.invoke(asyncResult, object : AsyncResultCallback {
-                override fun onAsyncResultCompleted() {
-                    asyncOperationCompleted()
-                }
-            })
+            asyncResultSubscriber.invoke(asyncResult) { asyncOperationCompleted() }
             asyncResult
         }
     }
@@ -154,15 +154,10 @@ class RateLimitedDispatcherKt(
         rateLimiter.updateRate(rate)
     }
 
-//    @kotlin.Throws(Exception::class)
     override fun close() {
         var stateUpdated = state.compareAndSet(State.RUNNING, State.SHUTTING_DOWN)
         if (!stateUpdated) {
-            logger.info(
-                "Close called on RateLimitedDispatcher [{}] with state [{}]",
-                name,
-                state.get()
-            )
+            logger.info("Close called on RateLimitedDispatcher [{}] with state [{}]", name, state.get())
             return
         }
         windowSizeSubscription.close()
@@ -175,7 +170,7 @@ class RateLimitedDispatcherKt(
                 closingTimeout.get(), name
             )
         }
-        val timeout = Math.max(closingTimeout.get(), 0)
+        val timeout = max(closingTimeout.get(), 0)
         if (timeout > 0) {
             thread.join(timeout)
         }
@@ -193,43 +188,6 @@ class RateLimitedDispatcherKt(
         profiler.detachIndicator(ACTIVE_ASYNC_OPERATIONS)
     }
 
-    /**
-     * Async operation that should be invoked by [RateLimitedDispatcher] at configurate rate.
-     * @param <AsyncResultT> represents result of async operation
-    </AsyncResultT> */
-    @FunctionalInterface
-    interface AsyncOperation<AsyncResultT> {
-        operator fun invoke(): AsyncResultT
-    }
-
-    /**
-     * Informs [RateLimitedDispatcher] that async operation result is completed.
-     */
-    @FunctionalInterface
-    interface AsyncResultCallback {
-        /**
-         * Invoke, when async operation result is completed successfully or with exception.
-         */
-        fun onAsyncResultCompleted()
-    }
-
-    /**
-     * Invoked by [RateLimitedDispatcher].
-     * Should attach asyncResultCallback to asyncResult and invoke it when asyncResult is complete.
-     * @param <AsyncResultT> represents result of async operation
-    </AsyncResultT> */
-    @FunctionalInterface
-    interface AsyncResultSubscriber<AsyncResultT> {
-        /**
-         * Invoked by [RateLimitedDispatcher].
-         * Should attach asyncResultCallback to asyncResult and invoke it when asyncResult is complete.
-         *
-         * @param asyncResult         that will complete asynchronously
-         * @param asyncResultCallback should be invoked when asyncResult is complete
-         */
-        fun subscribe(asyncResult: AsyncResultT, asyncResultCallback: AsyncResultCallback?)
-    }
-
     private inner class TaskProcessor : Runnable {
         override fun run() {
             while (state.get() == State.RUNNING || state.get() == State.SHUTTING_DOWN && !taskQueue.isEmpty()) {
@@ -243,8 +201,7 @@ class RateLimitedDispatcherKt(
                     logger.error(otherException.message, otherException)
                 }
             }
-            val taskExceptionText: String
-            taskExceptionText = if (state.get() == State.TERMINATE) {
+            val taskExceptionText: String = if (state.get() == State.TERMINATE) {
                 "RateLimitedDispatcher [$name] is in [TERMINATE] state"
             } else {
                 "RateLimitedDispatcher [$name] interrupted"
@@ -255,7 +212,6 @@ class RateLimitedDispatcherKt(
             })
         }
 
-//        @kotlin.Throws(InterruptedException::class)
         private fun processCommandsIfExist() {
             var command: Command? = commandQueue.poll()
             while (command != null) {
@@ -264,7 +220,6 @@ class RateLimitedDispatcherKt(
             }
         }
 
-//        @kotlin.Throws(InterruptedException::class)
         private fun waitForTaskInQueueAndProcess() {
             val task: Task<Any?> = taskQueue.take()
             if (task is AwakeFromWaitingQueueTask) {
@@ -314,9 +269,7 @@ class RateLimitedDispatcherKt(
 
         private fun rejectDueToTerminateState(future: CompletableFuture<*>) {
             future.completeExceptionally(
-                RejectedExecutionException(
-                    "RateLimitedDispatcher [$name] is in [TERMINATE] state"
-                )
+                RejectedExecutionException("RateLimitedDispatcher [$name] is in [TERMINATE] state")
             )
         }
     }
@@ -325,19 +278,7 @@ class RateLimitedDispatcherKt(
         val future: CompletableFuture<T>,
         val supplier: () -> T,
         val queueWaitTimeCall: ProfiledCall
-    ) {
-//        fun getSupplier(): () -> T {
-//            return supplier
-//        }
-
-//        fun getFuture(): CompletableFuture<T> {
-//            return future
-//        }
-
-//        fun getQueueWaitTimeCall(): ProfiledCall {
-//            return queueWaitTimeCall
-//        }
-    }
+    )
 
     private class AwakeFromWaitingQueueTask : Task<Any?> (
         CompletableFuture(),
@@ -346,13 +287,11 @@ class RateLimitedDispatcherKt(
     )
 
     private interface Command {
-//        @kotlin.Throws(InterruptedException::class)
         fun apply()
     }
 
     private inner class ChangeWindowSizeCommand(private val oldSize: Int, private val newSize: Int) :
         Command {
-//        @kotlin.Throws(InterruptedException::class)
         override fun apply() {
             if (newSize == oldSize) return
             windowSize = newSize

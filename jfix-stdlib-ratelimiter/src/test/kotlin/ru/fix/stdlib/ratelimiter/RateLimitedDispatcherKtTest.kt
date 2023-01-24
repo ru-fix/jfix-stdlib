@@ -59,7 +59,7 @@ class RateLimitedDispatcherKtTest {
 
         val delayedSubmission = dispatcher.compose(
                 { userAsyncOperation() },
-                { asyncResult, callback -> asyncResult.whenComplete { callback?.onAsyncResultCompleted() } }
+                { asyncResult, callback -> asyncResult.whenComplete { callback.invoke() } }
         )
 
         (asyncResultInstance === delayedSubmission.get()).shouldBeTrue()
