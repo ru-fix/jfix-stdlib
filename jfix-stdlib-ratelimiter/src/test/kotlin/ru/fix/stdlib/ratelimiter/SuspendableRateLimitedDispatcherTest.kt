@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 @Execution(ExecutionMode.CONCURRENT)
-class RateLimitedDispatcherKtTest {
+class SuspendableRateLimitedDispatcherTest {
     private companion object : KLogging() {
         const val DISPATCHER_NAME = "dispatcher-name"
         const val DISPATCHER_METRICS_PREFIX = "RateLimiterDispatcher.$DISPATCHER_NAME"
@@ -461,7 +461,7 @@ class RateLimitedDispatcherKtTest {
             window: DynamicProperty<Int> = DynamicProperty.of(0),
             closingTimeout: Int = 5000,
             profiler: Profiler = NoopProfiler()) =
-            RateLimitedDispatcherKt(
+            SuspendableRateLimitedDispatcher(
                     DISPATCHER_NAME,
                     ConfigurableRateLimiter("rate-limiter-name", rateLimitRequestPerSecond),
                     profiler,

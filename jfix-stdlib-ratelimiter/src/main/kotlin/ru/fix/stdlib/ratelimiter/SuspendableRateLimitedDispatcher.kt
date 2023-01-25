@@ -21,7 +21,7 @@ import kotlin.math.max
  * Rate specify how many requests per second will be dispatched.
  * Window size specify how many async operations with uncompleted result allowed.
  * When Window or Rate restriction is reached, dispatcher will stop to process requests and enqueue them in umbound queue.
- * Disaptcher executes all operations in single dedicated thread.
+ * Dispatcher executes all operations in single dedicated thread.
  *
  * @param name           name of dispatcher - will be used in metrics and worker's thread name
  * @param rateLimiter    rate limiter, which provides rate of operation
@@ -31,7 +31,7 @@ import kotlin.math.max
  *                       Any negative number will be interpreted as 0.
  *
  */
-class RateLimitedDispatcherKt(
+class SuspendableRateLimitedDispatcher(
     name: String,
     rateLimiter: RateLimiter,
     profiler: Profiler,
