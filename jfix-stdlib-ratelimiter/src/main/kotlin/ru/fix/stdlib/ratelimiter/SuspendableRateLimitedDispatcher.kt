@@ -1,5 +1,6 @@
 package ru.fix.stdlib.ratelimiter
 
+import kotlinx.coroutines.runInterruptible
 import org.slf4j.LoggerFactory
 import ru.fix.aggregating.profiler.NoopProfiler.NoopProfiledCall
 import ru.fix.aggregating.profiler.PrefixedProfiler
@@ -148,6 +149,19 @@ class SuspendableRateLimitedDispatcher(
         val queueWaitTime = profiler.start("queue_wait")
         taskQueue.add(Task(result, supplier, queueWaitTime) as Task<Any?>)
         return result
+    }
+
+    private suspend fun <T> submit1(supplier: () -> T): T = runInterruptible {
+        val state = state.get()
+        return@runInterruptible if (state != State.RUNNING) {
+            throw RejectedExecutionException(
+                "RateLimiterDispatcher [$name] is in '$state' state"
+            )
+        } else {
+            val queueWaitTime = profiler.start("queue_wait")
+            taskQueue.add(Task(result, supplier, queueWaitTime) as Task<Any?>)
+
+        }
     }
 
     fun updateRate(rate: Int) {
