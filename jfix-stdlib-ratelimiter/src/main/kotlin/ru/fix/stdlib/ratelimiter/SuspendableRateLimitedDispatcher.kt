@@ -16,6 +16,7 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.Supplier
+import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
 /**
@@ -38,8 +39,8 @@ class SuspendableRateLimitedDispatcher(
         private val rateLimiter: RateLimiter,
         profiler: Profiler,
         windowSize: DynamicProperty<Int>,
-        private val closingTimeout: DynamicProperty<Long>,
-        private val coroutineScope: CoroutineScope = DispatcherCommonPoolScope
+        closingTimeout: DynamicProperty<Long>,
+        context: CoroutineContext = DispatcherCommonPoolScope.coroutineContext
 ) : AutoCloseable {
 
     companion object {
@@ -71,6 +72,7 @@ class SuspendableRateLimitedDispatcher(
 
     private val semaphore: AtomicReference<Semaphore> = AtomicReference(Semaphore(1))
 
+    private val waitingScope: DispatcherWaitingScope = DispatcherWaitingScope(closingTimeout, context)
 
     /**
      * Creates new dispatcher instance
@@ -138,7 +140,7 @@ class SuspendableRateLimitedDispatcher(
             val queueWaitTime = profiler.start("queue_wait")
             queueSize.incrementAndGet()
 
-            val deferred = coroutineScope.async {
+            val deferred = waitingScope.async {
                 processTask(Task2(supplier, queueWaitTime))
             }
             deferreds.add(deferred)
@@ -163,11 +165,8 @@ class SuspendableRateLimitedDispatcher(
             it.cancel("Cancelling deferred on dispatcher close")
         }
 
-        if (closingTimeout.get() < 0) {
-            logger.warn(
-                "Rate limiter timeout must be greater than or equals 0. Current value is {}, rate limiter name: {}",
-                closingTimeout.get(), name
-            )
+        if (!waitingScope.waitChildrenAndCancel()) {
+            logger.warn("Timeout while waiting for coroutines finishing")
         }
         stateUpdated = state.compareAndSet(State.SHUTTING_DOWN, State.TERMINATE)
         if (!stateUpdated) {
