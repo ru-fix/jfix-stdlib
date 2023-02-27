@@ -2,13 +2,13 @@ package ru.fix.stdlib.ratelimiter
 
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
+import mu.KotlinLogging
 import org.slf4j.LoggerFactory
 import ru.fix.aggregating.profiler.PrefixedProfiler
 import ru.fix.aggregating.profiler.ProfiledCall
 import ru.fix.aggregating.profiler.Profiler
 import ru.fix.dynamic.property.api.DynamicProperty
 import ru.fix.dynamic.property.api.PropertySubscription
-import java.lang.invoke.MethodHandles
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ForkJoinPool
@@ -34,35 +34,32 @@ import kotlin.coroutines.EmptyCoroutineContext
  *
  */
 class SuspendableRateLimitedDispatcher(
-        name: String,
-        rateLimiter: RateLimiter,
+        private val name: String,
+        private val rateLimiter: RateLimiter,
         profiler: Profiler,
         windowSize: DynamicProperty<Int>,
-        closingTimeout: DynamicProperty<Long>,
-        coroutineScope: CoroutineScope = DispatcherCommonPoolScope
+        private val closingTimeout: DynamicProperty<Long>,
+        private val coroutineScope: CoroutineScope = DispatcherCommonPoolScope
 ) : AutoCloseable {
 
     companion object {
         private const val QUEUE_SIZE_INDICATOR = "queue_size"
         private const val ACTIVE_ASYNC_OPERATIONS = "active_async_operations"
-        private const val WINDOW_ACQUIRE_DELAY_MS = 500L
-    }
+        private const val WINDOW_ACQUIRE_DELAY_MS = 3_000L
 
-    private val logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass())
+        private val logger = KotlinLogging.logger {}
+    }
 
     private val state = AtomicReference<State>()
 
-    private val rateLimiter: RateLimiter
     private val deferreds = CopyOnWriteArrayList<Deferred<Any?>>()
 
-    private val name: String
     private val profiler: Profiler
 
     /**
      * Accessed only by single dedicated thread
      */
     private var windowSize = 1
-    private val closingTimeout: DynamicProperty<Long>
 
     private val windowSizeSubscription: PropertySubscription<Int>
 
@@ -74,24 +71,17 @@ class SuspendableRateLimitedDispatcher(
 
     private val semaphore: AtomicReference<Semaphore> = AtomicReference(Semaphore(1))
 
-    private val coroutineScope: CoroutineScope
 
     /**
      * Creates new dispatcher instance
      */
     init {
-        this.name = name
-        this.rateLimiter = rateLimiter
-        this.closingTimeout = closingTimeout
-
         this.profiler = PrefixedProfiler(profiler, "RateLimiterDispatcher.$name.")
 
         state.set(State.RUNNING)
 
         this.profiler.attachIndicator(QUEUE_SIZE_INDICATOR) { queueSize.get().toLong() }
         this.profiler.attachIndicator(ACTIVE_ASYNC_OPERATIONS) { activeAsyncOperations.get().toLong() }
-
-        this.coroutineScope = coroutineScope
 
         windowSizeSubscription = windowSize.createSubscription().setAndCallListener { oldValue: Int?, newValue: Int ->
             runBlocking {
@@ -117,16 +107,16 @@ class SuspendableRateLimitedDispatcher(
         }
     }
 
-    suspend fun <AsyncResultT> compose(
-            asyncOperation: () -> AsyncResultT,
-            asyncResultSubscriber: (asyncResult: AsyncResultT, asyncResultCallback: () -> Unit) -> Unit
-    ): Deferred<AsyncResultT> {
-        return submit {
-            val asyncResult = asyncOperation.invoke()
-            asyncResultSubscriber.invoke(asyncResult) { asyncOperationCompleted() }
-            asyncResult
-        }
-    }
+//    suspend fun <AsyncResultT> compose(
+//            asyncOperation: () -> AsyncResultT,
+//            asyncResultSubscriber: (asyncResult: AsyncResultT, asyncResultCallback: () -> Unit) -> Unit
+//    ): Deferred<AsyncResultT> {
+//        return submit {
+//            val asyncResult = asyncOperation.invoke()
+//            asyncResultSubscriber.invoke(asyncResult) { asyncOperationCompleted() }
+//            asyncResult
+//        }
+//    }
 
     /**
      * Submits new operation to task queue.
@@ -205,10 +195,10 @@ class SuspendableRateLimitedDispatcher(
                             logger.error(message)
                             throw RejectedExecutionException(message)
                         }
-                        windowAcquired = semaphore.get().tryAcquire()
-                        if (!windowAcquired) {
-                            delay(WINDOW_ACQUIRE_DELAY_MS)
-                        }
+                        windowAcquired = withTimeoutOrNull(WINDOW_ACQUIRE_DELAY_MS) {
+                            semaphore.get().acquire()
+                            true
+                        } ?: false
                     }
                     acquireWindowTime.stop()
                 }

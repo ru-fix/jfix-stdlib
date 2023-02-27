@@ -37,31 +37,31 @@ class SuspendableRateLimitedDispatcherTest {
         const val DISPATCHER_METRICS_PREFIX = "RateLimiterDispatcher.$DISPATCHER_NAME"
     }
 
-    @Test
-    fun `dispatch async operation with user defined async result type, operation invoked and it's result returned`() = runBlocking {
-        class UserAsyncResult {
-            fun whenComplete(callback: () -> Unit) {
-                callback()
-            }
-        }
-
-        val dispatcher = createDispatcher()
-
-        val asyncResultInstance = UserAsyncResult()
-
-        fun userAsyncOperation(): UserAsyncResult {
-            return asyncResultInstance
-        }
-
-        val result = dispatcher.compose(
-                { userAsyncOperation() },
-                { asyncResult, callback -> asyncResult.whenComplete { callback.invoke() } }
-        ).await()
-
-        (result === asyncResultInstance).shouldBeTrue()
-
-        dispatcher.close()
-    }
+//    @Test
+//    fun `dispatch async operation with user defined async result type, operation invoked and it's result returned`() = runBlocking {
+//        class UserAsyncResult {
+//            fun whenComplete(callback: () -> Unit) {
+//                callback()
+//            }
+//        }
+//
+//        val dispatcher = createDispatcher()
+//
+//        val asyncResultInstance = UserAsyncResult()
+//
+//        fun userAsyncOperation(): UserAsyncResult {
+//            return asyncResultInstance
+//        }
+//
+//        val result = dispatcher.compose(
+//                { userAsyncOperation() },
+//                { asyncResult, callback -> asyncResult.whenComplete { callback.invoke() } }
+//        ).await()
+//
+//        (result === asyncResultInstance).shouldBeTrue()
+//
+//        dispatcher.close()
+//    }
 
     @Test
     fun `dispatch async operation with successfull CompletableFuture, operation invoked and it's result returned`() = runBlocking {
