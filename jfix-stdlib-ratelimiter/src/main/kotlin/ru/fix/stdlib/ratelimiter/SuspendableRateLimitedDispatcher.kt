@@ -53,8 +53,6 @@ class SuspendableRateLimitedDispatcher(
 
     private val state = AtomicReference<State>()
 
-    private val deferreds = CopyOnWriteArrayList<Deferred<Any?>>()
-
     private val profiler: Profiler
 
     /**
@@ -101,36 +99,25 @@ class SuspendableRateLimitedDispatcher(
         semaphore.get().release()
     }
 
-    suspend fun <T> compose(supplier: () -> T): Deferred<T> {
+    suspend fun <T> compose(supplier: suspend () -> T): T {
         return submit {
             val res = supplier.invoke()
             asyncOperationCompleted()
             res
-        }
+        }.await()
     }
-
-//    suspend fun <AsyncResultT> compose(
-//            asyncOperation: () -> AsyncResultT,
-//            asyncResultSubscriber: (asyncResult: AsyncResultT, asyncResultCallback: () -> Unit) -> Unit
-//    ): Deferred<AsyncResultT> {
-//        return submit {
-//            val asyncResult = asyncOperation.invoke()
-//            asyncResultSubscriber.invoke(asyncResult) { asyncOperationCompleted() }
-//            asyncResult
-//        }
-//    }
 
     /**
      * Submits new operation to task queue.
      *
      *
-     * WARNING: task should not be long running operation
+     * WARNING: task should not be long-running operation
      * and should not block processing thread.
      *
      * @param supplier task to execute and retrieve result
      * @return feature which represent result of task execution
      */
-    private suspend fun <T> submit(supplier: () -> T): Deferred<T> {
+    private suspend fun <T> submit(supplier: suspend () -> T): Deferred<T> {
         val state = state.get()
         return if (state != State.RUNNING) {
             throw RejectedExecutionException(
@@ -140,12 +127,9 @@ class SuspendableRateLimitedDispatcher(
             val queueWaitTime = profiler.start("queue_wait")
             queueSize.incrementAndGet()
 
-            val deferred = waitingScope.async {
+            waitingScope.async {
                 processTask(Task2(supplier, queueWaitTime))
             }
-            deferreds.add(deferred)
-            deferred.invokeOnCompletion { deferreds.remove(deferred) }
-            deferred
         }
     }
 
@@ -161,12 +145,9 @@ class SuspendableRateLimitedDispatcher(
         }
         windowSizeSubscription.close()
 
-        deferreds.forEach {
-            it.cancel("Cancelling deferred on dispatcher close")
-        }
-
         if (!waitingScope.waitChildrenAndCancel()) {
             logger.warn("Timeout while waiting for coroutines finishing")
+            throw RejectedExecutionException("RateLimitedDispatcher [$name] get timeout while waiting for coroutines finishing")
         }
         stateUpdated = state.compareAndSet(State.SHUTTING_DOWN, State.TERMINATE)
         if (!stateUpdated) {
@@ -216,13 +197,13 @@ class SuspendableRateLimitedDispatcher(
             }
 
             queueSize.decrementAndGet()
-            // Since async operation may complete faster then Started method call
+            // Since async operation may complete faster than Started method call
             // it must be called before asynchronous operation started
             asyncOperationStarted()
 
             return profiler.profile(
                     "supply_operation",
-                    Supplier { task.supplier.invoke() }
+                    Supplier { runBlocking { task.supplier.invoke() } }
             )!!
         } catch (e: Exception) {
             logger.error("RateLimitedDispatcher [$name] received exception: $e")
@@ -231,7 +212,7 @@ class SuspendableRateLimitedDispatcher(
     }
 
     private open class Task2<T>(
-            val supplier: () -> T,
+            val supplier: suspend () -> T,
             val queueWaitTimeCall: ProfiledCall
     )
 

@@ -9,16 +9,15 @@ import io.kotest.matchers.doubles.shouldBeBetween
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.future.future
-import kotlinx.coroutines.runBlocking
 import mu.KLogging
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.Timeout
+import org.slf4j.LoggerFactory
 import ru.fix.aggregating.profiler.*
 import ru.fix.dynamic.property.api.AtomicProperty
 import ru.fix.dynamic.property.api.DynamicProperty
@@ -28,6 +27,7 @@ import java.util.concurrent.*
 import java.util.concurrent.CompletableFuture.completedFuture
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.random.Random
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
@@ -37,31 +37,7 @@ class SuspendableRateLimitedDispatcherTest {
         const val DISPATCHER_METRICS_PREFIX = "RateLimiterDispatcher.$DISPATCHER_NAME"
     }
 
-//    @Test
-//    fun `dispatch async operation with user defined async result type, operation invoked and it's result returned`() = runBlocking {
-//        class UserAsyncResult {
-//            fun whenComplete(callback: () -> Unit) {
-//                callback()
-//            }
-//        }
-//
-//        val dispatcher = createDispatcher()
-//
-//        val asyncResultInstance = UserAsyncResult()
-//
-//        fun userAsyncOperation(): UserAsyncResult {
-//            return asyncResultInstance
-//        }
-//
-//        val result = dispatcher.compose(
-//                { userAsyncOperation() },
-//                { asyncResult, callback -> asyncResult.whenComplete { callback.invoke() } }
-//        ).await()
-//
-//        (result === asyncResultInstance).shouldBeTrue()
-//
-//        dispatcher.close()
-//    }
+    val scope: CoroutineScope = DispatcherTestCommonPoolScope
 
     @Test
     fun `dispatch async operation with successfull CompletableFuture, operation invoked and it's result returned`() = runBlocking {
@@ -72,9 +48,8 @@ class SuspendableRateLimitedDispatcherTest {
             return completedFuture(operationResult)
         }
 
-        val delayedSubmissionFuture = dispatcher.compose { userAsyncOperation() }
+        val future = dispatcher.compose { userAsyncOperation() }
 
-        val future = delayedSubmissionFuture.await()
         future.isDone.shouldBeTrue()
         (future.get() === operationResult).shouldBeTrue()
 
@@ -94,7 +69,7 @@ class SuspendableRateLimitedDispatcherTest {
             }
         }
 
-        val delayedSubmissionFuture = dispatcher.compose { userAsyncOperation() }.await()
+        val delayedSubmissionFuture = dispatcher.compose { userAsyncOperation() }
 
         await().atMost(Duration.ofSeconds(10)).until {
             delayedSubmissionFuture.isCompletedExceptionally
@@ -161,7 +136,7 @@ class SuspendableRateLimitedDispatcherTest {
                 profiledCall.profile<CompletableFuture<Int>> {
                     completedFuture(counter.incrementAndGet())
                 }
-            }.await()
+            }
         }
 
         logger.info("Submit $interations operations.")
@@ -384,7 +359,7 @@ class SuspendableRateLimitedDispatcherTest {
         val futures = List(3) {
             dispatch.compose {
                 completedFuture(true)
-            }.await()
+            }
         }
         dispatch.close()
 
@@ -401,29 +376,21 @@ class SuspendableRateLimitedDispatcherTest {
 
         val deferreds = ArrayList<Deferred<*>>()
         for (i in 1..3) {
-            deferreds.add(dispatch.compose {
-                sleep(3000)
-                completedFuture(true)
-            })
+            deferreds.add(
+                    scope.async {
+                        dispatch.compose {
+                            sleep(3000)
+                            completedFuture(true)
+                        }
+                    }
+            )
         }
 
-        dispatch.close()
-
-        deferreds.forEach { deferred ->
-            val exc = shouldThrow<RuntimeException> {
-                deferred.await()
-            }
-            exc.cause.shouldBeInstanceOf<RuntimeException> {
-                (exc.cause is CancellationException || exc.cause is RejectedExecutionException).shouldBeTrue()
-                if (exc.cause is CancellationException) {
-                    exc.message!!.contains("Cancelling deferred on dispatcher close").shouldBeTrue()
-                }
-                if (exc.cause is RejectedExecutionException) {
-                    exc.message!!.contains("RateLimitedDispatcher").shouldBeTrue()
-                }
-            }
-            deferred.isCancelled.shouldBeTrue()
+        val exc = shouldThrow<RejectedExecutionException> {
+            dispatch.close()
         }
+        exc.message!!.contains("timeout while waiting for coroutines finishing").shouldBeTrue()
+
     }
 
     @Test
@@ -455,7 +422,7 @@ class SuspendableRateLimitedDispatcherTest {
 
         runBlocking {
 
-            val result = dispatcher.compose { future { mySuspendFunction() } }.await().await()
+            val result = dispatcher.compose { future { mySuspendFunction() } }.await()
 
             suspendFunctionInvoked.get().shouldBeTrue()
             result.shouldBe("suspend-function-result")
@@ -514,14 +481,19 @@ class SuspendableRateLimitedDispatcherTest {
             isSubmittedTaskInvoked[taskIndex] = AtomicBoolean(false)
             isSubmittedTaskFinished[taskIndex] = AtomicBoolean(false)
 
-            dispatcher.compose {
-                isSubmittedTaskInvoked[taskIndex]!!.set(true)
-                if (sleepTo > 0) {
-                    sleep(Random.nextLong(500, sleepTo))    //long operation imitation with blocking
+            scope.async {
+                dispatcher.compose {
+                    logger.info { "Setting isSubmittedTaskInvoked with index $taskIndex to true" }
+                    isSubmittedTaskInvoked[taskIndex]!!.set(true)
+                    if (sleepTo > 0) {
+                        sleep(Random.nextLong(500, sleepTo))    //long operation imitation with blocking
+                    }
+                    logger.info { "Setting isSubmittedTaskFinished with index $taskIndex to true" }
+                    isSubmittedTaskFinished[taskIndex]!!.set(true)
+                    future
                 }
-                isSubmittedTaskFinished[taskIndex]!!.set(true)
-                future
             }
+
         }
 
         fun isSubmittedTaskInvoked(index: Int) = isSubmittedTaskInvoked[index]!!.get()
@@ -543,6 +515,17 @@ class SuspendableRateLimitedDispatcherTest {
 
     private fun ProfilerReport.getProfilerMetric(metric: String): ProfiledCallReport {
         return profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.$metric" }
+    }
+
+    private object DispatcherTestCommonPoolScope : CoroutineScope {
+        private val log = LoggerFactory.getLogger(DispatcherTestCommonPoolScope::class.java)
+
+        override val coroutineContext = EmptyCoroutineContext +
+                ForkJoinPool.commonPool().asCoroutineDispatcher() +
+                CoroutineExceptionHandler { context, thr ->
+                    log.error(context.toString(), thr)
+                } +
+                CoroutineName("CommonPool")
     }
 
 }
