@@ -2,11 +2,8 @@ package ru.fix.stdlib.ratelimiter
 
 import kotlinx.coroutines.*
 import mu.KotlinLogging
-import org.slf4j.LoggerFactory
 import ru.fix.dynamic.property.api.DynamicProperty
-import java.util.concurrent.ForkJoinPool
 import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
 
 open class DispatcherWaitingScope(
         private val waitTimeout: DynamicProperty<Long>,
@@ -48,19 +45,8 @@ open class DispatcherWaitingScope(
         return waitingResult
     }
 
-    fun getPendingOperations(): Int {
+    private fun getPendingOperations(): Int {
         return parentJob.children.count()
-    }
-
-    private object DispatcherCommonPoolScope : CoroutineScope {
-        private val log = LoggerFactory.getLogger(DispatcherCommonPoolScope::class.java)
-
-        override val coroutineContext = EmptyCoroutineContext +
-                ForkJoinPool.commonPool().asCoroutineDispatcher() +
-                CoroutineExceptionHandler { context, thr ->
-                    log.error(context.toString(), thr)
-                } +
-                CoroutineName("CommonPool")
     }
 
 }
