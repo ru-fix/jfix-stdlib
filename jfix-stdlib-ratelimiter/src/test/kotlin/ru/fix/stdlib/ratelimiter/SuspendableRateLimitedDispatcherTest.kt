@@ -162,7 +162,7 @@ class SuspendableRateLimitedDispatcherTest {
         val reporter = profiler.createReporter()
         val trackableDispatcher = TrackableDispatcher(profiler)
 
-        trackableDispatcher.submitTasks(1..10, 11..12)
+        trackableDispatcher.submitTasks(1..12)
         await().atMost(Duration.ofSeconds(2)).until {
             trackableDispatcher.isSubmittedTaskInvoked(1..10)
         }
@@ -348,18 +348,9 @@ class SuspendableRateLimitedDispatcherTest {
             }
         }
 
-        /**
-         * We want to be sure, that tasks from first range will be submitted before tasks from second range
-         */
-        suspend fun submitTasks(range1: IntRange, range2: IntRange) {
-            submitTasks(range1)
-            delay(200)
-            submitTasks(range2)
-        }
-
         private suspend fun submitCompletedTask(taskIndex: Int) = submitTask(taskIndex, completedFuture(taskIndex), 0)
 
-        suspend fun submitTask(taskIndex: Int, sleepTo: Long) = submitTask(taskIndex, CompletableFuture(), sleepTo)
+        private suspend fun submitTask(taskIndex: Int, sleepTo: Long) = submitTask(taskIndex, CompletableFuture(), sleepTo)
 
         private suspend fun submitTask(taskIndex: Int, future: CompletableFuture<Any?>, sleepTo: Long) {
             isSubmittedTaskInvoked[taskIndex] = AtomicBoolean(false)
