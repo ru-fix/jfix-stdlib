@@ -8,8 +8,8 @@ import org.slf4j.LoggerFactory
 import java.util.concurrent.ForkJoinPool
 import kotlin.coroutines.EmptyCoroutineContext
 
-object DispatcherCommonPoolScope : CoroutineScope {
-    private val log = LoggerFactory.getLogger(DispatcherCommonPoolScope::class.java)
+object TestCommonPoolScope : CoroutineScope {
+    private val log = LoggerFactory.getLogger(TestCommonPoolScope::class.java)
 
     override val coroutineContext = EmptyCoroutineContext +
             ForkJoinPool.commonPool().asCoroutineDispatcher() +

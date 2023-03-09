@@ -35,7 +35,7 @@ class SuspendableRateLimitedDispatcherTest {
         const val DISPATCHER_METRICS_PREFIX = "RateLimiterDispatcher.$DISPATCHER_NAME"
     }
 
-    val scope: CoroutineScope = DispatcherCommonPoolScope
+    val scope: CoroutineScope = TestCommonPoolScope
 
     @Test
     fun `dispatch async operation with successfull CompletableFuture, operation invoked and it's result returned`() = runBlocking {
@@ -325,7 +325,8 @@ class SuspendableRateLimitedDispatcherTest {
                     DISPATCHER_NAME,
                     ConfigurableRateLimiter("rate-limiter-name", rateLimitRequestPerSecond),
                     profiler,
-                    DynamicProperty.of(closingTimeout.toLong())
+                    DynamicProperty.of(closingTimeout.toLong()),
+                    Dispatchers.Default
             )
 
     inner class TrackableDispatcher(

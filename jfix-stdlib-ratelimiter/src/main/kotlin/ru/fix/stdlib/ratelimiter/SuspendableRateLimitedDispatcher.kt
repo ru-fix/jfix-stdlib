@@ -32,7 +32,7 @@ class SuspendableRateLimitedDispatcher(
         private val rateLimiter: RateLimiter,
         profiler: Profiler,
         closingTimeout: DynamicProperty<Long>,
-        context: CoroutineContext = DispatcherCommonPoolScope.coroutineContext
+        context: CoroutineContext
 ) : AutoCloseable {
 
     companion object {
