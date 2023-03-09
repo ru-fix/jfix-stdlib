@@ -7,7 +7,7 @@ import kotlin.coroutines.CoroutineContext
 
 open class DispatcherWaitingScope(
         private val waitTimeout: DynamicProperty<Long>,
-        context: CoroutineContext = DispatcherCommonPoolScope.coroutineContext
+        context: CoroutineContext = Dispatchers.Default
 ) : CoroutineScope {
 
     companion object {

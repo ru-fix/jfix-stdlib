@@ -72,6 +72,8 @@ object Libs {
 
     const val awaitility = "org.awaitility:awaitility:4.0.1"
     const val kotest_assertions = "io.kotest:kotest-assertions-core:4.1.1"
+
+    const val aggregating_profiler_kotlin = "ru.fix:aggregating-profiler-kotlin:1.6.6"
 }
 
 

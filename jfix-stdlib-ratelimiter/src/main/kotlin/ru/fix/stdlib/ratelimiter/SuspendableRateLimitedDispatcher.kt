@@ -2,16 +2,15 @@ package ru.fix.stdlib.ratelimiter
 
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
-import kotlinx.coroutines.runBlocking
 import mu.KotlinLogging
 import ru.fix.aggregating.profiler.PrefixedProfiler
 import ru.fix.aggregating.profiler.Profiler
+import ru.fix.aggregating.profiler.profileBlock
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import java.util.function.Supplier
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -149,10 +148,9 @@ class SuspendableRateLimitedDispatcher(
             // it must be called before asynchronous operation started
             asyncOperationStarted()
 
-            return profiler.profile(
-                    "supply_operation",
-                    Supplier { runBlocking { supplier.invoke() } }
-            )!!
+            return profiler.profileBlock("supply_operation") {
+                supplier.invoke()
+            }
         } catch (e: Exception) {
             logger.error("RateLimitedDispatcher [$name] received exception: $e")
             throw RejectedExecutionException("RateLimitedDispatcher [$name] received exception: ${e.message}")

@@ -26,4 +26,6 @@ dependencies {
     testImplementation(Libs.kotlin_logging)
     testImplementation(Libs.kotest_assertions)
 
+    implementation(Libs.aggregating_profiler_kotlin)
+
 }
