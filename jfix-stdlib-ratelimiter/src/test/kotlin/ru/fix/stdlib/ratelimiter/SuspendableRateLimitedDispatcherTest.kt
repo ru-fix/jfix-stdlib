@@ -323,7 +323,7 @@ class SuspendableRateLimitedDispatcherTest {
             profiler: Profiler = NoopProfiler()) =
             SuspendableRateLimitedDispatcher(
                     DISPATCHER_NAME,
-                    ConfigurableRateLimiter("rate-limiter-name", rateLimitRequestPerSecond),
+                    ConfigurableRateLimiterKt("rate-limiter-name", rateLimitRequestPerSecond),
                     profiler,
                     DynamicProperty.of(closingTimeout.toLong()),
                     Dispatchers.Default

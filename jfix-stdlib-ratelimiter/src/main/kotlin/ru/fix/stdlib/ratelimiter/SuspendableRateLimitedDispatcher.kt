@@ -28,7 +28,7 @@ import kotlin.coroutines.CoroutineContext
  */
 class SuspendableRateLimitedDispatcher(
         private val name: String,
-        private val rateLimiter: RateLimiter,
+        private val rateLimiter: RateLimiterKt,
         profiler: Profiler,
         closingTimeout: DynamicProperty<Long>,
         context: CoroutineContext
@@ -101,7 +101,7 @@ class SuspendableRateLimitedDispatcher(
         }
     }
 
-    fun updateRate(rate: Int) {
+    suspend fun updateRate(rate: Int) {
         rateLimiter.updateRate(rate)
     }
 
