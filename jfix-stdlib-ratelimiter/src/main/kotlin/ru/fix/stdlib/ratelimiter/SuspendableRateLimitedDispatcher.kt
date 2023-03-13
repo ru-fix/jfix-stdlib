@@ -101,7 +101,7 @@ class SuspendableRateLimitedDispatcher(
         }
     }
 
-    suspend fun updateRate(rate: Int) {
+    fun updateRate(rate: Int) {
         rateLimiter.updateRate(rate)
     }
 

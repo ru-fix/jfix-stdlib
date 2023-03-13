@@ -36,7 +36,7 @@ class ConfigurableRateLimiterKt(name: String, permitsPerSecond: Int) : RateLimit
         // Nothing to do
     }
 
-    override suspend fun getRate(): Double {
+    override fun getRate(): Double {
         val refreshPeriodInNanos = rateLimiter.rateLimiterConfig.limitRefreshPeriodInNanos
 
         return (1000000000 / refreshPeriodInNanos).toDouble()
@@ -46,11 +46,11 @@ class ConfigurableRateLimiterKt(name: String, permitsPerSecond: Int) : RateLimit
         return rateLimiter.acquirePermission(Duration.ZERO)
     }
 
-    override suspend fun tryAcquire(timeout: Long, unit: TemporalUnit?): Boolean {
+    override suspend fun tryAcquire(timeout: Long, unit: TemporalUnit): Boolean {
         return rateLimiter.acquirePermission(Duration.of(timeout, unit))
     }
 
-    override suspend fun updateRate(permitsPerSecond: Int) {
+    override fun updateRate(permitsPerSecond: Int) {
         val name = rateLimiter.name
 
         // We can update rate limiter at any time because limits for period is always set to 1.

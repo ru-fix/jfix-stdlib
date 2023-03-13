@@ -7,7 +7,7 @@ interface RateLimiterKt : AutoCloseable {
     /**
      * Get configured rate limit
      */
-    suspend fun getRate(): Double
+    fun getRate(): Double
 
     /**
      * Try to acquire permit without waiting for it to become available.
@@ -21,11 +21,11 @@ interface RateLimiterKt : AutoCloseable {
      *
      * @return `true` if permit has been acquired `false` otherwise
      */
-    suspend fun tryAcquire(timeout: Long, unit: TemporalUnit?): Boolean
+    suspend fun tryAcquire(timeout: Long, unit: TemporalUnit): Boolean
 
     /**
      * Update configuration
      */
-    suspend fun updateRate(permitsPerSecond: Int)
+    fun updateRate(permitsPerSecond: Int)
 
 }
