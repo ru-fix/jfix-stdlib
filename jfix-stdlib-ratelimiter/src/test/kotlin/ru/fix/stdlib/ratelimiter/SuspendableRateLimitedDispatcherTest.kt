@@ -26,7 +26,6 @@ import java.util.concurrent.*
 import java.util.concurrent.CompletableFuture.completedFuture
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.random.Random
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class SuspendableRateLimitedDispatcherTest {
@@ -326,7 +325,7 @@ class SuspendableRateLimitedDispatcherTest {
                     ConfigurableRateLimiterKt("rate-limiter-name", rateLimitRequestPerSecond),
                     profiler,
                     DynamicProperty.of(closingTimeout.toLong()),
-                    Dispatchers.Default
+                    Dispatchers.IO
             )
 
     inner class TrackableDispatcher(
@@ -362,7 +361,7 @@ class SuspendableRateLimitedDispatcherTest {
                     logger.info { "Setting isSubmittedTaskInvoked with index $taskIndex to true" }
                     isSubmittedTaskInvoked[taskIndex]!!.set(true)
                     if (sleepTo > 0) {
-                        sleep(Random.nextLong(500, sleepTo))    //long operation imitation with blocking
+                        sleep(sleepTo)    //long operation imitation with blocking
                     }
                     logger.info { "Setting isSubmittedTaskFinished with index $taskIndex to true" }
                     isSubmittedTaskFinished[taskIndex]!!.set(true)
