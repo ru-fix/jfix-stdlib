@@ -42,8 +42,8 @@ class ConfigurableRateLimiterKt(name: String, permitsPerSecond: Int) : RateLimit
         return (1000000000 / refreshPeriodInNanos).toDouble()
     }
 
-    override suspend fun tryAcquire(): Boolean {
-        return rateLimiter.acquirePermission(Duration.ZERO)
+    override fun tryAcquire(): Boolean {
+        return rateLimiter.getPermission(Duration.ZERO)
     }
 
     override suspend fun tryAcquire(timeout: Long, unit: TemporalUnit): Boolean {
@@ -74,7 +74,7 @@ class ConfigurableRateLimiterKt(name: String, permitsPerSecond: Int) : RateLimit
                 delay(TimeUnit.NANOSECONDS.toMillis(waitTimeNs))
             }
             waitTimeNs < 0 -> {
-                throw RejectedExecutionException("Couldn't acquire rate limiter permission")
+                return false
             }
         }
         return true

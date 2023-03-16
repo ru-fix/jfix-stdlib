@@ -34,7 +34,7 @@ class SuspendableRateLimitedDispatcherTest {
         const val DISPATCHER_METRICS_PREFIX = "RateLimiterDispatcher.$DISPATCHER_NAME"
     }
 
-    val scope: CoroutineScope = TestCommonPoolScope
+    val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 
     @Test
     fun `dispatch async operation with successfull CompletableFuture, operation invoked and it's result returned`() = runBlocking {

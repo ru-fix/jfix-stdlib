@@ -14,7 +14,7 @@ interface RateLimiterKt : AutoCloseable {
      *
      * @return `true` if permit has been acquired `false` otherwise
      */
-    suspend fun tryAcquire(): Boolean
+    fun tryAcquire(): Boolean
 
     /**
      * Try to acquire permit. If it isn't immediately available waits for it specified timeout.
