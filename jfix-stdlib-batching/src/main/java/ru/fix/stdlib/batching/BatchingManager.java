@@ -34,7 +34,7 @@ public class BatchingManager<ConfigT, PayloadT, KeyT> implements AutoCloseable {
     private final BatchingParameters batchingParameters;
 
     /**
-     * Monitoring queue and and create BatchProcessor for executed Row
+     * Monitoring queue and create BatchProcessor for executed Row
      */
     private final BatchingManagerThread<ConfigT, PayloadT, KeyT> batchingManagerThread;
 
@@ -112,12 +112,7 @@ public class BatchingManager<ConfigT, PayloadT, KeyT> implements AutoCloseable {
     }
 
     public BatchingManager<ConfigT, PayloadT, KeyT> setBatchThreads(int batchThreads) {
-        try {
-            batchingManagerThread.setThreadCount(batchThreads);
-        } catch (InterruptedException exc) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException(exc);
-        }
+        batchingManagerThread.setThreadCount(batchThreads);
         return this;
     }
 

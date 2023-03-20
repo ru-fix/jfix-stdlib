@@ -11,7 +11,6 @@ import ru.fix.stdlib.concurrency.threads.ProfiledThreadPoolExecutor;
 
 import java.util.*;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
@@ -32,7 +31,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
     /**
      * Handle max count of parallel running {@link ru.fix.stdlib.batching.BatchProcessor}
      */
-    private final Semaphore batchProcessorsTracker;
+    private final BatchProcessorsTracker batchProcessorsTracker = new BatchProcessorsTracker(log);
 
     private final Object waitForOperationLock = new Object();
     private final ConfigT config;
@@ -55,11 +54,6 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
                 DynamicProperty.of(batchingParameters.getBatchThreads()),
                 profiler
         );
-
-        /*
-         * batchThreads for BatchProcessors
-         */
-        batchProcessorsTracker = new Semaphore(batchingParameters.getBatchThreads());
 
         this.pendingTableOperations = pendingTableOperations;
         this.batchingParameters = batchingParameters;
@@ -172,12 +166,9 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
         boolean isBatchProcessorThreadAvailable = false;
         while (!isShutdown.get() && !isBatchProcessorThreadAvailable) {
             try {
-                isBatchProcessorThreadAvailable =
-                        batchProcessorsTracker.tryAcquire(100, TimeUnit.MILLISECONDS);
-                if (isBatchProcessorThreadAvailable) {
-                    log.trace("isBatchProcessorThreadAvailable");
-                    batchProcessorsTracker.release();
-                }
+                isBatchProcessorThreadAvailable = batchProcessorsTracker.isBatchProcessorThreadAvailable(() ->
+                        batchProcessorPool.getQueue().size() < batchProcessorPool.getMaximumPoolSize()
+                );
             } catch (InterruptedException exc) {
                 log.trace(THREAD_INTERRUPTED_MESSAGE, exc);
                 Thread.currentThread().interrupt();
@@ -286,7 +277,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
         }
     }
 
-    public void setThreadCount(int newThreadCount) throws InterruptedException {
+    public void setThreadCount(int newThreadCount) {
         /*
          * guard updating batchProcessorPool size
          */

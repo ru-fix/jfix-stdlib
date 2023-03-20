@@ -7,7 +7,6 @@ import ru.fix.aggregating.profiler.ProfiledCall;
 import ru.fix.aggregating.profiler.Profiler;
 
 import java.util.List;
-import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 
 import static ru.fix.stdlib.batching.BatchingManagerMetricsProvider.BATCHING_MANAGER_ID_TAG_NAME;
@@ -18,7 +17,7 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
 
     private final ConfigT config;
 
-    private final Semaphore batchProcessorsTracker;
+    private final BatchProcessorsTracker batchProcessorsTracker;
     private final List<Operation<PayloadT>> batch;
     private final BatchTask<ConfigT, PayloadT, KeyT> batchTask;
     private final KeyT key;
@@ -30,7 +29,7 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
 
     public BatchProcessor(ConfigT config,
                           List<Operation<PayloadT>> batch,
-                          Semaphore batchProcessorsTracker,
+                          BatchProcessorsTracker batchProcessorsTracker,
                           BatchTask<ConfigT, PayloadT, KeyT> batchTask, KeyT key,
                           String batchManagerId,
                           Profiler profiler) {
@@ -59,15 +58,7 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
      */
     @Override
     public void run() {
-        try {
-            log.trace("acquire semaphore");
-            batchProcessorsTracker.acquire();
-        } catch (InterruptedException exc) {
-            log.error("BatchProcessor thread interrupted", exc);
-            Thread.currentThread().interrupt();
-        } finally {
-            awaitExecution.stop();
-        }
+        awaitExecution.stop();
 
         try {
             List<PayloadT> payloadBatch = batch.stream().map(Operation::getPayload).collect(Collectors.toList());
@@ -81,8 +72,8 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
         } catch (Exception exc) {
             log.error("Exception during preparing and sending batch", exc);
         } finally {
-            log.trace("release semaphore");
-            batchProcessorsTracker.release();
+            log.trace("BatchProcessor thread finished");
+            batchProcessorsTracker.notifyAboutAvailableBatchProcessorThread();
         }
     }
 }
