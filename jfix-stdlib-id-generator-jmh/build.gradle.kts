@@ -1,15 +1,15 @@
 plugins {
     java
     kotlin("jvm")
-    id("me.champeau.gradle.jmh")
+    id(Libs.jmh_gradle_plugin) apply true
 }
 
 
-jmh{
-    warmupIterations = 2
-    fork = 2
-    threads = 8
-    duplicateClassesStrategy  = DuplicatesStrategy.WARN
+jmh {
+    warmupIterations.set(2)
+    fork.set(2)
+    threads.set(8)
+    duplicateClassesStrategy.set(DuplicatesStrategy.WARN)
 }
 
 
@@ -23,5 +23,3 @@ dependencies {
     runtimeOnly(Libs.jmh_generator_bytecode)
     implementation(Libs.jmh_generator_ann)
 }
-
-
