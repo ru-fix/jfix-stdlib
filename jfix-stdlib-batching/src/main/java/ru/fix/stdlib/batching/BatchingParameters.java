@@ -1,5 +1,8 @@
 package ru.fix.stdlib.batching;
 
+import org.jetbrains.annotations.Nullable;
+import ru.fix.stdlib.concurrency.settings.ProfiledThreadPoolSettings;
+
 public class BatchingParameters {
     /**
      * Size of batch for put method for each table
@@ -18,8 +21,10 @@ public class BatchingParameters {
     private volatile int batchTimeout = 10;
 
     /**
-     * How many batch operations on HBase will be perfomed in parallel.
+     * How many batch operations will be performed in parallel.
+     * @deprecated <b>should be removed in future releases</b>
      */
+    @Deprecated
     private volatile int batchThreads = 20;
 
     /**
@@ -28,14 +33,26 @@ public class BatchingParameters {
     private volatile boolean blockIfLimitExceeded;
 
     /**
-     * How many batch operations on HBase will be perfomed in parallel.
+     * How many batch operations will be performed in parallel.
+     * <p>
+     * These settings are replacement for {@link #batchThreads}.
+     * <p>
+     * If {@code poolSettings == null} then {@link #batchThreads} will be used.
+     *
+     * @see ProfiledThreadPoolSettings
+     */
+    @Nullable
+    private ProfiledThreadPoolSettings poolSettings;
+
+    /**
+     * How many batch operations will be performed in parallel.
      */
     public int getBatchThreads() {
         return batchThreads;
     }
 
     /**
-     * How many batch operations on HBase will be perfomed in parallel.
+     * How many batch operations will be performed in parallel.
      */
     public BatchingParameters setBatchThreads(int batchThreads) {
         this.batchThreads = batchThreads;
@@ -78,4 +95,12 @@ public class BatchingParameters {
         return this;
     }
 
+    public ProfiledThreadPoolSettings getPoolSettings() {
+        return poolSettings;
+    }
+
+    public BatchingParameters setPoolSettings(ProfiledThreadPoolSettings poolSettings) {
+        this.poolSettings = poolSettings;
+        return this;
+    }
 }

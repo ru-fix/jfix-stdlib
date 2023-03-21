@@ -52,14 +52,14 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
      * @param poolName name of the pool
      * @param maxPoolSize maximum allowed number of threads. This parameter makes corePoolSize = maximumPoolSize!!!
      * @param profiler instance of AggregatingProfiler
-     * @see ProfiledThreadPoolExecutor#deprecatedPoolSettings(DynamicProperty)
+     * @see ProfiledThreadPoolExecutor#legacyPoolSettings(DynamicProperty)
      */
     @Deprecated
     public ProfiledThreadPoolExecutor(String poolName, DynamicProperty<Integer> maxPoolSize, Profiler profiler) {
-        this(deprecatedPoolSettings(maxPoolSize),
+        this(legacyPoolSettings(maxPoolSize),
                 poolName,
                 profiler,
-                Subscriptions.getDeprecatedPoolSettingsSubscriptionFactory()
+                Subscriptions.getLegacyPoolSettingsSubscriptionFactory()
         );
     }
 
@@ -175,15 +175,10 @@ public class ProfiledThreadPoolExecutor extends ThreadPoolExecutor {
         return "pool." + profilerPoolName + "." + metricName;
     }
 
-    private static DynamicProperty<ProfiledThreadPoolSettings> deprecatedPoolSettings(
+    private static DynamicProperty<ProfiledThreadPoolSettings> legacyPoolSettings(
             DynamicProperty<Integer> maxPoolSize
     ) {
-        return maxPoolSize.map(maxSize -> new ProfiledThreadPoolSettings(
-                maxSize,
-                maxSize,
-                ProfiledThreadPoolSettings.THREAD_IDLE_TIMEOUT_BEFORE_TERMINATION,
-                true
-        ));
+        return maxPoolSize.map(ProfiledThreadPoolSettings::legacyProfiledThreadPoolSettings);
     }
 
     private abstract static class ProfiledRunnable implements Runnable {

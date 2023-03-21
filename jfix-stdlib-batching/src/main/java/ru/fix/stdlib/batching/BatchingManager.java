@@ -111,6 +111,13 @@ public class BatchingManager<ConfigT, PayloadT, KeyT> implements AutoCloseable {
         return operationQueue.size() >= batchingParameters.getMaxPendingOperations();
     }
 
+    /**
+     * @deprecated Number of threads should be managed via {@link BatchingParameters#getPoolSettings()}
+     * and property subscription.
+     * @param batchThreads How many batch operations will be performed in parallel.
+     * @return current BatchingManager
+     */
+    @Deprecated
     public BatchingManager<ConfigT, PayloadT, KeyT> setBatchThreads(int batchThreads) {
         batchingManagerThread.setThreadCount(batchThreads);
         return this;

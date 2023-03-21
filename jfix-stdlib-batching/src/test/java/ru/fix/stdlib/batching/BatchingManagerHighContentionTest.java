@@ -3,6 +3,7 @@ package ru.fix.stdlib.batching;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import ru.fix.aggregating.profiler.NoopProfiler;
+import ru.fix.stdlib.concurrency.settings.ProfiledThreadPoolSettings;
 
 import java.util.stream.IntStream;
 
@@ -29,12 +30,17 @@ class BatchingManagerHighContentionTest {
 
         BatchTask<Object, Object, String> task = (a, b, c) -> {
             synchronized (this) {
-                this.wait(10);
+                this.wait(5);
             }
         };
 
         IntStream.range(1, 51).parallel().mapToObj(idx -> {
+
+            ProfiledThreadPoolSettings poolSettings = ProfiledThreadPoolSettings
+                    .defaultProfiledThreadPoolSettings(5, 20);
+
             BatchingParameters parameters = new BatchingParameters()
+                    .setPoolSettings(poolSettings)
                     .setBatchTimeout(0)
                     .setBatchSize(BATCH)
                     .setBlockIfLimitExceeded(mode.blockIfLimitExceeded());

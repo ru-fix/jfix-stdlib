@@ -35,5 +35,19 @@ data class ProfiledThreadPoolSettings(
             corePoolSize = 1,
             maxPoolSize = 1
         )
+
+        @JvmStatic
+        fun defaultProfiledThreadPoolSettings(corePoolSize: Int, maxPoolSize: Int) = ProfiledThreadPoolSettings(
+            corePoolSize = corePoolSize,
+            maxPoolSize = maxPoolSize
+        )
+
+        @JvmStatic
+        fun legacyProfiledThreadPoolSettings(maxPoolSize: Int) = ProfiledThreadPoolSettings(
+            corePoolSize = maxPoolSize,
+            maxPoolSize = maxPoolSize,
+            keepAliveTime = THREAD_IDLE_TIMEOUT_BEFORE_TERMINATION,
+            allowCoreThreadTimeout = true
+        )
     }
 }

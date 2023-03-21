@@ -37,7 +37,7 @@ internal class Subscriptions {
          * oldValue is going to be null.
          */
         @JvmStatic
-        val deprecatedPoolSettingsSubscriptionFactory = PoolSettingsSubscriptionFactory { executor, poolSettings ->
+        val legacyPoolSettingsSubscriptionFactory = PoolSettingsSubscriptionFactory { executor, poolSettings ->
             poolSettings.createSubscription().setAndCallListener { oldVal: ProfiledThreadPoolSettings?, newVal ->
                 if (oldVal == null || (newVal.maxPoolSize != oldVal.maxPoolSize)) {
                     executor.setMaxPoolSize(newVal.maxPoolSize)

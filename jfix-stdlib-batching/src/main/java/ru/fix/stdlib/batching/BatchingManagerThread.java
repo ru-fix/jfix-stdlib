@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
+import ru.fix.stdlib.concurrency.settings.ProfiledThreadPoolSettings;
 import ru.fix.stdlib.concurrency.threads.NamedExecutors;
 import ru.fix.stdlib.concurrency.threads.ProfiledThreadPoolExecutor;
 
@@ -49,11 +50,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
             String batchManagerId, BatchTask<ConfigT, PayloadT, KeyT> batchTask) {
 
 
-        batchProcessorPool = NamedExecutors.newDynamicPool(
-                "batching-manager-" + batchManagerId,
-                DynamicProperty.of(batchingParameters.getBatchThreads()),
-                profiler
-        );
+        batchProcessorPool = buildBatchProcessorPool(batchManagerId, batchingParameters, profiler);
 
         this.pendingTableOperations = pendingTableOperations;
         this.batchingParameters = batchingParameters;
@@ -68,6 +65,25 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
         );
 
         metricsProvider = new BatchingManagerMetricsProvider(batchManagerId, profiler);
+    }
+
+    private static ProfiledThreadPoolExecutor buildBatchProcessorPool(
+            String batchManagerId,
+            BatchingParameters parameters,
+            Profiler profiler
+    ) {
+        ProfiledThreadPoolSettings settings;
+        if (parameters.getPoolSettings() != null) {
+            settings = parameters.getPoolSettings();
+        } else {
+            settings = ProfiledThreadPoolSettings.legacyProfiledThreadPoolSettings(parameters.getBatchThreads());
+        }
+
+        return NamedExecutors.newDynamicPool(
+                DynamicProperty.of(settings),
+                "batching-manager-" + batchManagerId,
+                profiler
+        );
     }
 
     private static void shutdownAndAwaitTermination(ExecutorService executor) {
@@ -277,7 +293,8 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
         }
     }
 
-    public void setThreadCount(int newThreadCount) {
+    @Deprecated
+    void setThreadCount(int newThreadCount) {
         /*
          * guard updating batchProcessorPool size
          */
