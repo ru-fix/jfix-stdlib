@@ -140,10 +140,10 @@ class ProfiledPoolsTest {
 
         assertTrue { pool.awaitTermination(10, TimeUnit.SECONDS) }
 
-        reporter.buildReportAndReset().let {
-            println(it)
-            assertEquals(1L, it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.stopSum)
-            assertEquals(0L, it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.activeCallsCountMax)
+        reporter.buildReportAndReset().let { report ->
+            println(report)
+            assertEquals(1L, report.profilerCallReports.find { it.identity.name == "pool.test.run" }?.stopSum)
+            assertEquals(0L, report.profilerCallReports.find { it.identity.name == "pool.test.run" }?.activeCallsCountMax)
         }
 
         assertEquals(1, taskCompleted.sum())
@@ -174,10 +174,10 @@ class ProfiledPoolsTest {
 
         assertTrue { pool.awaitTermination(10, TimeUnit.SECONDS) }
 
-        reporter.buildReportAndReset().let {
-            println(it)
-            assertEquals(1L, it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.stopSum)
-            assertEquals(0L, it.profilerCallReports.find { it.identity.name == "pool.test.run" }?.activeCallsCountMax)
+        reporter.buildReportAndReset().let { report ->
+            println(report)
+            assertEquals(1L, report.profilerCallReports.find { it.identity.name == "pool.test.run" }?.stopSum)
+            assertEquals(0L, report.profilerCallReports.find { it.identity.name == "pool.test.run" }?.activeCallsCountMax)
         }
 
         assertEquals(1, taskCompleted.sum())
@@ -304,4 +304,3 @@ class ProfiledPoolsTest {
         }
     }
 }
-

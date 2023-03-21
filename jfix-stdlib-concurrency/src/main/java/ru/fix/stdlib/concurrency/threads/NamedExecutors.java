@@ -2,13 +2,14 @@ package ru.fix.stdlib.concurrency.threads;
 
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
+import ru.fix.stdlib.concurrency.settings.ProfiledThreadPoolSettings;
 
 import java.util.concurrent.ForkJoinPool;
 
 /**
  * @author Kamil Asfandiyarov
  */
-public class NamedExecutors {
+public final class NamedExecutors {
 
     /**
      * Create new thread pool with dynamic size
@@ -21,7 +22,10 @@ public class NamedExecutors {
      *  );
      * }
      * </pre>
+     * @deprecated <b>should be removed in future releases</b>
+     * @see NamedExecutors#newDynamicPool(String, DynamicProperty, Profiler)
      */
+    @Deprecated
     public static ProfiledThreadPoolExecutor newDynamicPool(String poolName,
                                                             DynamicProperty<Integer> maxPoolSize,
                                                             Profiler profiler) {
@@ -29,10 +33,25 @@ public class NamedExecutors {
         return new ProfiledThreadPoolExecutor(poolName, maxPoolSize, profiler);
     }
 
+    /**
+     * Creates new thread pool with dynamic size
+     */
+    public static ProfiledThreadPoolExecutor newDynamicPool(
+            DynamicProperty<ProfiledThreadPoolSettings> poolSettings,
+            String poolName,
+            Profiler profiler
+    ) {
+        return new ProfiledThreadPoolExecutor(poolSettings, poolName, profiler);
+    }
+
     public static ProfiledThreadPoolExecutor newSingleThreadPool(String poolName,
                                                                  Profiler profiler) {
 
-        return new ProfiledThreadPoolExecutor(poolName, DynamicProperty.of(1), profiler);
+        return new ProfiledThreadPoolExecutor(
+                DynamicProperty.of(ProfiledThreadPoolSettings.defaultSingleThreadPoolSettings()),
+                poolName,
+                profiler
+        );
     }
 
     public static ReschedulableScheduler newScheduler(String poolName,
@@ -89,6 +108,11 @@ public class NamedExecutors {
 
         profiler.attachIndicator("pool.commonPool.steal",
                 () -> ForkJoinPool.commonPool().getStealCount());
+
+    }
+
+
+    private NamedExecutors() {
 
     }
 }
