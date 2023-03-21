@@ -26,6 +26,7 @@ import java.util.concurrent.*
 import java.util.concurrent.CompletableFuture.completedFuture
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.CoroutineContext
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class SuspendableRateLimitedDispatcherTest {
@@ -37,7 +38,7 @@ class SuspendableRateLimitedDispatcherTest {
     val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 
     @Test
-    fun `dispatch async operation with successfull CompletableFuture, operation invoked and it's result returned`() = runBlocking {
+    fun `dispatch async operation with successfull CompletableFuture, operation invoked and it's result returned`() {
         val dispatcher = createDispatcher()
 
         val operationResult = Object()
@@ -47,15 +48,30 @@ class SuspendableRateLimitedDispatcherTest {
 
         val future = dispatcher.compose { userAsyncOperation() }
 
-        future.isDone.shouldBeTrue()
         (future.get() === operationResult).shouldBeTrue()
+        future.isDone.shouldBeTrue()
 
         dispatcher.close()
     }
 
+    @Test
+    fun `dispatch async operation with successfull result, operation invoked and it's result returned`() = runBlocking {
+        val dispatcher = createDispatcher()
+
+        val operationResult = Object()
+        fun userAsyncOperation(): Any {
+            return operationResult
+        }
+
+        val result = dispatcher.decorateSuspend { userAsyncOperation() }
+
+        (result === operationResult).shouldBeTrue()
+
+        dispatcher.close()
+    }
 
     @Test
-    fun `dispatch async operation with exceptional CompletableFuture, operation invoked and it's result returned`() = runBlocking {
+    fun `dispatch async operation with exceptional CompletableFuture, operation invoked and it's result returned`() {
         val dispatcher = createDispatcher()
 
         val asyncOperationException = Exception("some error")
@@ -75,9 +91,83 @@ class SuspendableRateLimitedDispatcherTest {
         val actualException = shouldThrow<Exception> { delayedSubmissionFuture.get() }
 
         actualException.cause.shouldNotBeNull()
-        actualException.cause.shouldBe(asyncOperationException)
+        actualException.message!!.contains(asyncOperationException.message!!)
 
         dispatcher.close()
+    }
+
+    @Test
+    fun `dispatch async operation with exceptional result, operation invoked and it's result returned`() = runBlocking {
+        val dispatcher = createDispatcher()
+
+        val asyncOperationException = Exception("some error")
+
+        fun userAsyncOperation(): Any {
+            throw asyncOperationException
+        }
+
+        val actualException = shouldThrow<Exception> { dispatcher.decorateSuspend { userAsyncOperation() } }
+
+        actualException.cause.shouldNotBeNull()
+        actualException.message!!.contains(asyncOperationException.message!!)
+
+        dispatcher.close()
+    }
+
+    @Test
+    fun `series of operations with CompletableFuture test`() {
+        val RATE_PER_SECOND = 500
+        val ITERATIONS = 5 * RATE_PER_SECOND
+
+        val report = `submit series of operations with CF`(
+                ratePerSecond = RATE_PER_SECOND,
+                iterations = ITERATIONS
+        )
+
+        val operationReport = report.profilerCallReports.single { it.identity.name == "operation" }
+
+        logger.info("Throughput " + operationReport.stopThroughputAvg)
+        operationReport.stopThroughputAvg.shouldBeBetween(
+                RATE_PER_SECOND.toDouble(),
+                RATE_PER_SECOND.toDouble(),
+                RATE_PER_SECOND.toDouble() * 0.25)
+    }
+
+    private fun `submit series of operations with CF`(
+            ratePerSecond: Int,
+            iterations: Int
+    ): ProfilerReport {
+
+        val profiler = AggregatingProfiler()
+
+        val dispatcher = createDispatcher(
+                rateLimitRequestPerSecond = ratePerSecond,
+                profiler = profiler,
+                context = Dispatchers.Unconfined
+        )
+
+        val counter = AtomicInteger(0)
+
+        val profilerReporter = profiler.createReporter()
+        val profiledCall = profiler.profiledCall("operation")
+
+        val futures = List(iterations) {
+                dispatcher.compose {
+                    profiledCall.profile<CompletableFuture<Int>> {
+                        completedFuture(counter.incrementAndGet())
+                    }
+                }
+            }
+
+        futures.forEach { it.join() }
+
+        counter.get().shouldBe(iterations)
+        futures.map { it.join() }.toSet().containsAll((1..iterations).toList())
+
+        val report = profilerReporter.buildReportAndReset()
+        dispatcher.close()
+
+        return report
     }
 
     @Test
@@ -87,7 +177,7 @@ class SuspendableRateLimitedDispatcherTest {
 
         val report = `submit series of operations`(
                 ratePerSecond = RATE_PER_SECOND,
-                interations = ITERATIONS
+                iterations = ITERATIONS
         )
 
         val operationReport = report.profilerCallReports.single { it.identity.name == "operation" }
@@ -101,7 +191,7 @@ class SuspendableRateLimitedDispatcherTest {
 
     private suspend fun `submit series of operations`(
             ratePerSecond: Int,
-            interations: Int
+            iterations: Int
     ): ProfilerReport {
 
         val profiler = AggregatingProfiler()
@@ -116,32 +206,32 @@ class SuspendableRateLimitedDispatcherTest {
         val profilerReporter = profiler.createReporter()
         val profiledCall = profiler.profiledCall("operation")
 
-        val features = List(interations) {
-            dispatcher.compose {
-                profiledCall.profile<CompletableFuture<Int>> {
-                    completedFuture(counter.incrementAndGet())
+        val results = List(iterations) {
+            dispatcher.decorateSuspend {
+                profiledCall.profile<Int> {
+                    counter.incrementAndGet()
                 }
             }
         }
 
-        counter.get().shouldBe(interations)
-        features.map { it.join() }.toSet().containsAll((1..interations).toList())
+        counter.get().shouldBe(iterations)
+        results.toSet().containsAll((1..iterations).toList())
 
         val report = profilerReporter.buildReportAndReset()
         dispatcher.close()
 
-        return report;
+        return report
     }
 
     @Test
-    fun `'acquire_limit', 'supply_operation', 'active_async_operations' metrics gathered during execution`() = runBlocking {
+    fun `'acquire_limit', 'supply_operation', 'active_async_operations' metrics gathered during execution with CompletableFuture`() = runBlocking {
 
         val RATE_PER_SECOND = 500
         val ITERATIONS = 5 * RATE_PER_SECOND
 
-        val report = `submit series of operations`(
+        val report = `submit series of operations with CF`(
                 ratePerSecond = RATE_PER_SECOND,
-                interations = ITERATIONS
+                iterations = ITERATIONS
         )
 
         report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.acquire_limit" }
@@ -156,6 +246,64 @@ class SuspendableRateLimitedDispatcherTest {
     }
 
     @Test
+    fun `'acquire_limit', 'supply_operation', 'active_async_operations' metrics gathered during execution`() = runBlocking {
+
+        val RATE_PER_SECOND = 500
+        val ITERATIONS = 5 * RATE_PER_SECOND
+
+        val report = `submit series of operations`(
+                ratePerSecond = RATE_PER_SECOND,
+                iterations = ITERATIONS
+        )
+
+        report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.acquire_limit" }
+                .stopSum.shouldBe(ITERATIONS)
+
+        report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.supply_operation" }
+                .stopSum.shouldBe(ITERATIONS)
+
+        report.indicators.map { it.key.name }.shouldContain("$DISPATCHER_METRICS_PREFIX.active_async_operations")
+
+        logger.info(report.toString())
+    }
+
+    @Test
+    fun `indicators 'active_async_operations' adjusted according to number of queued and active operations with CompletableFuture`() = runBlocking {
+        val profiler = AggregatingProfiler()
+        val reporter = profiler.createReporter()
+        val trackableDispatcherWithCF = TrackableDispatcherWithCF(profiler)
+
+        trackableDispatcherWithCF.submitTasks(1..12)
+        await().atMost(Duration.ofSeconds(2)).until {
+            trackableDispatcherWithCF.isSubmittedTaskInvoked(1..10)
+        }
+
+        reporter.buildReportAndReset().assertSoftly {
+            it.getMetric("active_async_operations") shouldBe 12
+        }
+
+        await().atMost(Duration.ofSeconds(1)).until {
+            trackableDispatcherWithCF.isSubmittedTaskFinished(1..10)
+        }
+        await().atMost(Duration.ofSeconds(3)).until {
+            trackableDispatcherWithCF.isSubmittedTaskInvoked(11..12)
+        }
+
+        reporter.buildReportAndReset().assertSoftly {
+            it.getMetric("active_async_operations") shouldBeInRange LongRange(0, 2)
+        }
+
+        await().atMost(Duration.ofSeconds(1)).until {
+            trackableDispatcherWithCF.isSubmittedTaskFinished(1..12)
+        }
+        reporter.buildReportAndReset().assertSoftly {
+            it.getMetric("active_async_operations") shouldBe 0
+        }
+
+        trackableDispatcherWithCF.completeAllAndClose()
+    }
+
+    @Test
     fun `indicators 'active_async_operations' adjusted according to number of queued and active operations`() = runBlocking {
         val profiler = AggregatingProfiler()
         val reporter = profiler.createReporter()
@@ -167,7 +315,7 @@ class SuspendableRateLimitedDispatcherTest {
         }
 
         reporter.buildReportAndReset().assertSoftly {
-            it.getMetric("active_async_operations") shouldBe 12//10
+            it.getMetric("active_async_operations") shouldBe 12
         }
 
         await().atMost(Duration.ofSeconds(1)).until {
@@ -178,7 +326,7 @@ class SuspendableRateLimitedDispatcherTest {
         }
 
         reporter.buildReportAndReset().assertSoftly {
-            it.getMetric("active_async_operations") shouldBeInRange LongRange(0, 2)//2
+            it.getMetric("active_async_operations") shouldBeInRange LongRange(0, 2)
         }
 
         await().atMost(Duration.ofSeconds(1)).until {
@@ -193,6 +341,17 @@ class SuspendableRateLimitedDispatcherTest {
 
     @Test
     fun `WHEN many fast CompletableFuture tasks completed THEN 'active_async_operations' is 0`() = runBlocking {
+        val report = `submit series of operations with CF`(500, 4000)
+
+        logger.info { report }
+        report.assertSoftly {
+            it.getMetric("active_async_operations") shouldBe 0
+        }
+        return@runBlocking
+    }
+
+    @Test
+    fun `WHEN many fast tasks completed THEN 'active_async_operations' is 0`() = runBlocking {
         val report = `submit series of operations`(500, 4000)
 
         logger.info { report }
@@ -204,6 +363,39 @@ class SuspendableRateLimitedDispatcherTest {
 
     @Test
     fun `WHEN completed futures arrived THEN indicators are correctly adjusted`() = runBlocking {
+        val profiler = AggregatingProfiler()
+        val reporter = profiler.createReporter()
+        val trackableDispatcherWithCF = TrackableDispatcherWithCF(profiler)
+
+        trackableDispatcherWithCF.submitCompletedTasks(1..4)
+        trackableDispatcherWithCF.submitTasks(5..6, 3000) // long executed tasks
+        await().atMost(Duration.ofSeconds(1)).until {
+            trackableDispatcherWithCF.isSubmittedTaskInvoked(1..6)
+        }
+        reporter.buildReportAndReset().assertSoftly {
+            it.getMetric("active_async_operations") shouldBe 2
+        }
+
+        trackableDispatcherWithCF.submitCompletedTasks(7..10)
+        await().atMost(Duration.ofSeconds(1)).until {
+            trackableDispatcherWithCF.isSubmittedTaskInvoked(7..10)
+        }
+        reporter.buildReportAndReset().assertSoftly {
+            it.getMetric("active_async_operations") shouldBe 2
+        }
+
+        await().atMost(Duration.ofSeconds(3)).until {
+            trackableDispatcherWithCF.isSubmittedTaskFinished(1..10)
+        }
+        reporter.buildReportAndReset().assertSoftly {
+            it.getMetric("active_async_operations") shouldBe 0
+        }
+
+        trackableDispatcherWithCF.completeAllAndClose()
+    }
+
+    @Test
+    fun `WHEN results arrived THEN indicators are correctly adjusted`() = runBlocking {
         val profiler = AggregatingProfiler()
         val reporter = profiler.createReporter()
         val trackableDispatcher = TrackableDispatcher(profiler)
@@ -241,7 +433,7 @@ class SuspendableRateLimitedDispatcherTest {
      */
     @Test
     @Timeout(10, unit = TimeUnit.SECONDS)
-    fun `on shutdown fast tasks complete normally`() = runBlocking {
+    fun `on shutdown fast tasks with CompletableFuture complete normally`() {
 
         val dispatch = createDispatcher(closingTimeout = 5_000)
 
@@ -258,21 +450,40 @@ class SuspendableRateLimitedDispatcherTest {
         }
     }
 
+    /**
+     * When dispatcher closingTimeout is enough for pending tasks to complete
+     * such tasks will complete normally
+     */
+    @Test
+    @Timeout(10, unit = TimeUnit.SECONDS)
+    fun `on shutdown fast tasks complete normally`() = runBlocking {
+
+        val dispatch = createDispatcher(closingTimeout = 5_000)
+
+        val results = List(3) {
+            dispatch.decorateSuspend {
+                true
+            }
+        }
+        dispatch.close()
+
+        results.forEach { result ->
+            result.shouldBeTrue()
+        }
+    }
+
     @Test
     @Timeout(5, unit = TimeUnit.SECONDS)
-    fun `on shutdown slow tasks complete exceptionally`() = runBlocking {
+    fun `on shutdown slow tasks with CompletableFuture complete exceptionally`() {
         val dispatch = createDispatcher(closingTimeout = 0)
 
-        val deferreds = ArrayList<Deferred<*>>()
         for (i in 1..3) {
-            deferreds.add(
-                    scope.async {
-                        dispatch.compose {
-                            sleep(3000)
-                            completedFuture(true)
-                        }
-                    }
-            )
+            scope.async {
+                dispatch.compose {
+                    sleep(3000)
+                    completedFuture(true)
+                }
+            }
         }
 
         val exc = shouldThrow<RejectedExecutionException> {
@@ -282,14 +493,49 @@ class SuspendableRateLimitedDispatcherTest {
     }
 
     @Test
-    fun `task, submitted in closed dispatcher, is rejected with exception`() = runBlocking {
+    @Timeout(5, unit = TimeUnit.SECONDS)
+    fun `on shutdown slow tasks complete exceptionally`() = runBlocking {
+        val dispatch = createDispatcher(closingTimeout = 0)
+
+        for (i in 1..3) {
+            scope.async {
+                dispatch.decorateSuspend {
+                    sleep(3000)
+                    true
+                }
+            }
+        }
+
+        val exc = shouldThrow<RejectedExecutionException> {
+            dispatch.close()
+        }
+        exc.message!!.contains("timeout while waiting for coroutines finishing").shouldBeTrue()
+    }
+
+    @Test
+    fun `task with CompletableFuture, submitted in closed dispatcher, is rejected with exception`() {
         val dispatcher = createDispatcher()
         dispatcher.close()
 
         val t = shouldThrow<Exception> {
             dispatcher.compose {
                 completedFuture(true)
-            }.await()
+            }.join()
+        }
+        t.shouldBeInstanceOf<CompletionException>()
+        t.message!!.contains("TERMINATE")
+        return
+    }
+
+    @Test
+    fun `task, submitted in closed dispatcher, is rejected with exception`() = runBlocking {
+        val dispatcher = createDispatcher()
+        dispatcher.close()
+
+        val t = shouldThrow<Exception> {
+            dispatcher.decorateSuspend {
+                true
+            }
         }
         t.shouldBeInstanceOf<RejectedExecutionException>()
         t.message!!.contains("TERMINATE")
@@ -316,17 +562,94 @@ class SuspendableRateLimitedDispatcherTest {
         }
     }
 
+    @Test
+    fun `invoke suspend function`() {
+        val dispatcher = createDispatcher()
+
+        val suspendFunctionInvoked = AtomicBoolean(false)
+
+        suspend fun mySuspendFunction(): String{
+            delay(500)
+            suspendFunctionInvoked.set(true)
+            return "suspend-function-result"
+        }
+
+        runBlocking {
+            val result = dispatcher.decorateSuspend { mySuspendFunction() }
+
+            suspendFunctionInvoked.get().shouldBeTrue()
+            result.shouldBe("suspend-function-result")
+        }
+    }
+
     fun createDispatcher(
             rateLimitRequestPerSecond: Int = 500,
             closingTimeout: Int = 5000,
-            profiler: Profiler = NoopProfiler()) =
+            profiler: Profiler = NoopProfiler(),
+            context: CoroutineContext = Dispatchers.IO
+    ) =
             SuspendableRateLimitedDispatcher(
                     DISPATCHER_NAME,
                     ConfigurableRateLimiterKt("rate-limiter-name", rateLimitRequestPerSecond),
                     profiler,
                     DynamicProperty.of(closingTimeout.toLong()),
-                    Dispatchers.IO
+                    context
             )
+
+    inner class TrackableDispatcherWithCF(
+            profiler: Profiler = NoopProfiler()
+    ) {
+
+        private val dispatcher = createDispatcher(profiler = profiler)
+        val isSubmittedTaskInvoked = HashMap<Int, AtomicBoolean>()
+        val isSubmittedTaskFinished = HashMap<Int, AtomicBoolean>()
+
+        fun submitCompletedTasks(tasks: IntRange) {
+            for (task in tasks) {
+                submitCompletedTask(task)
+            }
+        }
+
+        fun submitTasks(tasks: IntRange, sleepTo: Long = 1000) {
+            for (task in tasks) {
+                submitTask(task, sleepTo)
+            }
+        }
+
+        private fun submitCompletedTask(taskIndex: Int) = submitTask(taskIndex, completedFuture(taskIndex), 0)
+
+        private fun submitTask(taskIndex: Int, sleepTo: Long) = submitTask(taskIndex, CompletableFuture(), sleepTo)
+
+        private fun submitTask(taskIndex: Int, future: CompletableFuture<Any?>, sleepTo: Long) {
+            isSubmittedTaskInvoked[taskIndex] = AtomicBoolean(false)
+            isSubmittedTaskFinished[taskIndex] = AtomicBoolean(false)
+
+            dispatcher.compose {
+                logger.info { "Setting isSubmittedTaskInvoked with index $taskIndex to true" }
+                isSubmittedTaskInvoked[taskIndex]!!.set(true)
+                if (sleepTo > 0) {
+                    sleep(sleepTo)    //long operation imitation with blocking
+                    future.complete(taskIndex)
+                }
+                logger.info { "Setting isSubmittedTaskFinished with index $taskIndex to true" }
+                isSubmittedTaskFinished[taskIndex]!!.set(true)
+                logger.info { "Index has been set for index $taskIndex" }
+                future
+            }
+
+        }
+
+        fun isSubmittedTaskInvoked(range: IntRange) = range.all { isSubmittedTaskInvoked[it]!!.get() }
+        fun isSubmittedTaskFinished(range: IntRange) = range.all { isSubmittedTaskFinished[it]!!.get() }
+
+        fun completeAllAndClose() {
+            await().atMost(Duration.ofSeconds(10)).until {
+                isSubmittedTaskInvoked.all { it.value.get() }
+            }
+            dispatcher.close()
+        }
+
+    }
 
     inner class TrackableDispatcher(
             profiler: Profiler = NoopProfiler()
@@ -348,16 +671,16 @@ class SuspendableRateLimitedDispatcherTest {
             }
         }
 
-        private suspend fun submitCompletedTask(taskIndex: Int) = submitTask(taskIndex, completedFuture(taskIndex), 0)
+        private suspend fun submitCompletedTask(taskIndex: Int) = submitTask(taskIndex, taskIndex, 0)
 
-        private suspend fun submitTask(taskIndex: Int, sleepTo: Long) = submitTask(taskIndex, CompletableFuture(), sleepTo)
+        private suspend fun submitTask(taskIndex: Int, sleepTo: Long) = submitTask(taskIndex, Any(), sleepTo)
 
-        private suspend fun submitTask(taskIndex: Int, future: CompletableFuture<Any?>, sleepTo: Long) {
+        private suspend fun submitTask(taskIndex: Int, result: Any?, sleepTo: Long) {
             isSubmittedTaskInvoked[taskIndex] = AtomicBoolean(false)
             isSubmittedTaskFinished[taskIndex] = AtomicBoolean(false)
 
             scope.async {
-                dispatcher.compose {
+                dispatcher.decorateSuspend {
                     logger.info { "Setting isSubmittedTaskInvoked with index $taskIndex to true" }
                     isSubmittedTaskInvoked[taskIndex]!!.set(true)
                     if (sleepTo > 0) {
@@ -365,7 +688,7 @@ class SuspendableRateLimitedDispatcherTest {
                     }
                     logger.info { "Setting isSubmittedTaskFinished with index $taskIndex to true" }
                     isSubmittedTaskFinished[taskIndex]!!.set(true)
-                    future
+                    result
                 }
             }
 

@@ -1,13 +1,18 @@
 package ru.fix.stdlib.ratelimiter
 
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.async
+import kotlinx.coroutines.future.await
+import kotlinx.coroutines.future.future
 import mu.KotlinLogging
 import ru.fix.aggregating.profiler.PrefixedProfiler
 import ru.fix.aggregating.profiler.Profiler
 import ru.fix.aggregating.profiler.profileBlock
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -70,12 +75,20 @@ class SuspendableRateLimitedDispatcher(
         activeAsyncOperations.decrementAndGet()
     }
 
-    suspend fun <T> compose(supplier: suspend () -> T): T {
+    suspend fun <T> decorateSuspend(supplier: suspend () -> T): T {
         return submit {
             val res = supplier.invoke()
             asyncOperationCompleted()
             res
         }.await()
+    }
+
+    fun <T> compose(supplier: () -> CompletableFuture<T>): CompletableFuture<T> {
+        return GlobalScope.future(Dispatchers.Unconfined) {
+            decorateSuspend {
+                supplier.invoke().await()
+            }
+        }
     }
 
     /**
