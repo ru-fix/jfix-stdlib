@@ -38,11 +38,11 @@ public class BatchingManagerMetricsProvider {
         this.profiler = profiler;
     }
 
-    public Boolean profileBatchProcessorAwaitThread(Supplier<Boolean> awaiter) {
+    public boolean profileBatchProcessorAwaitThread(Supplier<Boolean> awaiter) {
         return profiler.profiledCall(batchProcessorThreadAwaitIdentity).profile(awaiter);
     }
 
-    public Boolean profileBatchManagerThreadAwaitOperation(Supplier<Boolean> awaiter) {
+    public boolean profileBatchManagerThreadAwaitOperation(Supplier<Boolean> awaiter) {
         return profiler.profiledCall(batchManagerOperationsAwaitIdentity).profile(awaiter);
     }
 

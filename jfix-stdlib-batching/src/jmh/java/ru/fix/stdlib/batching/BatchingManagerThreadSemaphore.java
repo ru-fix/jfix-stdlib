@@ -2,8 +2,6 @@ package ru.fix.stdlib.batching;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import ru.fix.aggregating.profiler.Profiler;
 import ru.fix.dynamic.property.api.DynamicProperty;
 import ru.fix.stdlib.concurrency.threads.NamedExecutors;
@@ -11,16 +9,13 @@ import ru.fix.stdlib.concurrency.threads.ProfiledThreadPoolExecutor;
 
 import java.util.*;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
-
-    private static final String THREAD_INTERRUPTED_MESSAGE = "BatchProcessorManager thread interrupted";
-
-    private final Logger log = LoggerFactory.getLogger(BatchingManagerThread.class);
+class BatchingManagerThreadSemaphore<ConfigT, PayloadT, KeyT> implements Runnable {
 
     private final AtomicBoolean isShutdown = new AtomicBoolean();
     private final ExecutorService batchProcessorManagerExecutor;
@@ -31,7 +26,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
     /**
      * Handle max count of parallel running {@link ru.fix.stdlib.batching.BatchProcessor}
      */
-    private final BatchProcessorsTracker batchProcessorsTracker = new BatchProcessorsTracker(log);
+    private final Semaphore batchProcessorsTracker;
 
     private final Object waitForOperationLock = new Object();
     private final ConfigT config;
@@ -41,7 +36,7 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
     private final String batchManagerId;
     private final BatchingManagerMetricsProvider metricsProvider;
 
-    public BatchingManagerThread(
+    BatchingManagerThreadSemaphore(
             ConfigT config,
             Map<KeyT, Queue<Operation<PayloadT>>> pendingTableOperations,
             BatchingParameters batchingParameters,
@@ -54,6 +49,12 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
                 DynamicProperty.of(batchingParameters.getBatchThreads()),
                 profiler
         );
+
+        /*
+         * batchThreads for BatchProcessors
+         */
+        batchProcessorsTracker = new Semaphore(batchingParameters.getBatchThreads());
+
 
         this.pendingTableOperations = pendingTableOperations;
         this.batchingParameters = batchingParameters;
@@ -86,30 +87,22 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
     /**
      * blocking method will return when all threads stops
      */
-    public void shutdown() {
-        if (!isShutdown.compareAndSet(false, true)) {
-            log.debug("already shutdown");
-        }
+    void shutdown() {
         shutdownAndAwaitTermination(batchProcessorManagerExecutor);
         shutdownAndAwaitTermination(batchProcessorPool);
     }
 
-    public void start() {
+    void start() {
         batchProcessorManagerExecutor.execute(this);
-        log.trace("BatchProcessorManagerThread executor started");
     }
 
     @Override
     public void run() {
-        log.trace("BatchProcessorManager thread started.");
-
         while (!isShutdown.get()) {
 
             boolean threadInterrupted;
 
-            log.trace("Check if thread interrupted");
             if (Thread.currentThread().isInterrupted()) {
-                log.trace(THREAD_INTERRUPTED_MESSAGE);
                 return;
             }
 
@@ -118,7 +111,6 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
             );
             if (threadInterrupted) return;
 
-            log.trace("Wait for available operations and copy them to local buffer.");
             List<Operation<PayloadT>> buffer = null;
             KeyT key = null;
             while (buffer == null && !isShutdown.get()) {
@@ -138,18 +130,16 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
             }
 
             if (!isShutdown.get() && buffer != null) {
-                log.trace("Start batch processor");
                 executeBatchForBuffer(buffer, key);
             }
         }
 
         metricsProvider.detachOperationQueueSizeIndicators();
-        log.trace("BatchProcessorManager thread stopped.");
     }
 
     private void executeBatchForBuffer(List<Operation<PayloadT>> buffer, KeyT key) {
         batchProcessorPool.execute(
-                new BatchProcessor<>(
+                new BatchProcessorSemaphore<>(
                         config,
                         buffer,
                         batchProcessorsTracker,
@@ -162,15 +152,16 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
     }
 
     private boolean waitForAvailableBatchProcessThread() {
-        log.trace("Wait available thread in BatchProcessor thread pool");
         boolean isBatchProcessorThreadAvailable = false;
         while (!isShutdown.get() && !isBatchProcessorThreadAvailable) {
             try {
-                isBatchProcessorThreadAvailable = batchProcessorsTracker.isBatchProcessorThreadAvailable(() ->
-                        batchProcessorPool.getQueue().size() < batchProcessorPool.getMaximumPoolSize()
-                );
+                isBatchProcessorThreadAvailable =
+                        batchProcessorsTracker.tryAcquire(100, TimeUnit.MILLISECONDS);
+
+                if (isBatchProcessorThreadAvailable) {
+                    batchProcessorsTracker.release();
+                }
             } catch (InterruptedException exc) {
-                log.trace(THREAD_INTERRUPTED_MESSAGE, exc);
                 Thread.currentThread().interrupt();
                 return true;
             }
@@ -191,7 +182,6 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
     }
 
     private boolean calculateTimeForSleepAndWaitForOperations() {
-        log.trace("calculate time to sleep");
         Optional<Long> oldestCreationTimestamp = getOldestOperationCreationTimeStamp();
 
         long waitTime;
@@ -204,16 +194,13 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
         } else {
             waitTime = batchingParameters.getBatchTimeout();
         }
-        log.trace("queue is empty, wait {}ms", waitTime);
         synchronized (waitForOperationLock) {
             try {
                 if (waitTime <= 0) {
                     waitTime = 1;
                 }
                 waitForOperationLock.wait(waitTime);
-                log.trace("leave wait section");
             } catch (InterruptedException exc) {
-                log.trace(THREAD_INTERRUPTED_MESSAGE, exc);
                 metricsProvider.detachOperationQueueSizeIndicators();
                 Thread.currentThread().interrupt();
                 return true;
@@ -246,8 +233,6 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
                 operationsQueue.notifyAll();
             }
         }
-        log.trace("Prepared buffer for \"{}\" table, buffer size {}, queue size {}", key, buffer.size(),
-                operationsQueue.size());
         return buffer;
     }
 
@@ -274,16 +259,6 @@ class BatchingManagerThread<ConfigT, PayloadT, KeyT> implements Runnable {
             return howMuchTimeHasPassed > batchingParameters.getBatchTimeout();
         } else {
             return false;
-        }
-    }
-
-    public void setThreadCount(int newThreadCount) {
-        /*
-         * guard updating batchProcessorPool size
-         */
-        synchronized (batchProcessorPool) {
-            batchingParameters.setBatchThreads(newThreadCount);
-            batchProcessorPool.setMaxPoolSize(newThreadCount);
         }
     }
 }
