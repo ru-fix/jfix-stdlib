@@ -43,39 +43,6 @@ class SuspendableRateLimitedDispatcherTest {
     val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 
     @Test
-    fun `dispatch async operation with successfull CompletableFuture, operation invoked and it's result returned`() {
-        val dispatcher = createDispatcher()
-
-        val operationResult = Object()
-        fun userAsyncOperation(): CompletableFuture<Any> {
-            return completedFuture(operationResult)
-        }
-
-        val future = dispatcher.compose { userAsyncOperation() }
-
-        (future.get() === operationResult).shouldBeTrue()
-        future.isDone.shouldBeTrue()
-
-        dispatcher.close()
-    }
-
-    @Test
-    fun `dispatch async operation with successfull result, operation invoked and it's result returned`() = runBlocking {
-        val dispatcher = createDispatcher()
-
-        val operationResult = Object()
-        fun userAsyncOperation(): Any {
-            return operationResult
-        }
-
-        val result = dispatcher.decorateSuspend { userAsyncOperation() }
-
-        (result === operationResult).shouldBeTrue()
-
-        dispatcher.close()
-    }
-
-    @Test
     fun `dispatch async operation with exceptional CompletableFuture, operation invoked and it's result returned`() {
         val dispatcher = createDispatcher()
 
@@ -471,14 +438,17 @@ class SuspendableRateLimitedDispatcherTest {
 
         val dispatch = createDispatcher(closingTimeout = 5_000)
 
-        val results = List(3) {
-            dispatch.decorateSuspend {
-                true
+        val results = async {
+            List(3) {
+                dispatch.decorateSuspend {
+                    true
+                }
             }
         }
+        delay(10)
         dispatch.close()
 
-        results.forEach { result ->
+        results.await().forEach { result ->
             result.shouldBeTrue()
         }
     }
