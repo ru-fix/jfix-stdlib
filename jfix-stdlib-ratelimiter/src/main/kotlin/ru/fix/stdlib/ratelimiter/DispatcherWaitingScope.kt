@@ -26,13 +26,14 @@ open class DispatcherWaitingScope(
      */
     fun waitChildrenAndCancel(): Boolean {
         val waitingResult = runBlocking {
+            val waitTimeoutMs = waitTimeout.get()
             try {
-                withTimeout(waitTimeout.get()) {
+                withTimeout(waitTimeoutMs) {
                     parentJob.children.forEach { c -> c.join() }
                 }
             } catch (e: TimeoutCancellationException) {
                 log.warn(e) {
-                    "Scope couldn't complete execution for $waitTimeout ms. All coroutines will be " +
+                    "Scope couldn't complete execution for $waitTimeoutMs ms. All coroutines will be " +
                             "canceled. Actual pending operations count: ${getPendingOperations()}"
                 }
                 parentJob.children.forEach { c -> c.cancel() }

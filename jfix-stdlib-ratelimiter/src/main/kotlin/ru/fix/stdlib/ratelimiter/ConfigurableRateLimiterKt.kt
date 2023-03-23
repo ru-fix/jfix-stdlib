@@ -5,7 +5,6 @@ import io.github.resilience4j.ratelimiter.internal.AtomicRateLimiter
 import kotlinx.coroutines.delay
 import java.time.Duration
 import java.time.temporal.TemporalUnit
-import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 
 class ConfigurableRateLimiterKt(name: String, permitsPerSecond: Int) : RateLimiterKt {

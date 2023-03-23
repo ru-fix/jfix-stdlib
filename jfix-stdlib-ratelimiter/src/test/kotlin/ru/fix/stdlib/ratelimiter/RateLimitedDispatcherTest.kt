@@ -6,11 +6,9 @@ import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.doubles.shouldBeBetween
-import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.throwable.shouldHaveCause
 import io.kotest.matchers.types.shouldBeInstanceOf
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.future.future
@@ -106,7 +104,7 @@ class RateLimitedDispatcherTest {
 
         val actualException = shouldThrow<Exception> { delayedSubmissionFuture.get() }
 
-        actualException.cause.shouldNotBeNull()
+        actualException.shouldHaveCause()
         actualException.cause.shouldBe(asyncOperationException)
 
         dispatcher.close()
@@ -135,7 +133,7 @@ class RateLimitedDispatcherTest {
 
         val operationReport = report.profilerCallReports.single { it.identity.name == "operation" }
 
-        logger.info("Throughput " + operationReport.stopThroughputAvg)
+        logger.info("Throughput $operationReport")
         operationReport.stopThroughputAvg.shouldBeBetween(
                 RATE_PER_SECOND.toDouble(),
                 RATE_PER_SECOND.toDouble(),
@@ -230,7 +228,7 @@ class RateLimitedDispatcherTest {
 
         report.indicators.map { it.key.name }.shouldContain("$DISPATCHER_METRICS_PREFIX.active_async_operations")
 
-        logger.info(report.toString())
+        logger.info { "Resulting profiler report: $report" }
     }
 
     @Test
