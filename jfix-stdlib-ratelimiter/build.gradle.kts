@@ -19,6 +19,7 @@ dependencies {
     testImplementation(Libs.mockito)
 
     testImplementation(Libs.junit_api)
+    testImplementation(Libs.junit_params)
     testImplementation(Libs.awaitility)
     testRuntimeOnly(Libs.junit_engine)
 
