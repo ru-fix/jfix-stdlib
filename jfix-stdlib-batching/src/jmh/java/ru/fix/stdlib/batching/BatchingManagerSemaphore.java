@@ -10,6 +10,13 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static java.lang.String.format;
 
+/**
+ * <b>For usage in jmh tests only!</b>
+ * @see BatchingManagerHighContentionJmh
+ * @param <ConfigT>
+ * @param <PayloadT>
+ * @param <KeyT>
+ */
 class BatchingManagerSemaphore<ConfigT, PayloadT, KeyT> implements AutoCloseable {
 
     /**

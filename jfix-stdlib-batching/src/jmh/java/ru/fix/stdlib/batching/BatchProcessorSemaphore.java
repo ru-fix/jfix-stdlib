@@ -11,6 +11,13 @@ import java.util.stream.Collectors;
 import static ru.fix.stdlib.batching.BatchingManagerMetricsProvider.BATCHING_MANAGER_ID_TAG_NAME;
 import static ru.fix.stdlib.batching.BatchingManagerMetricsProvider.BATCHING_MANAGER_KEY_TAG_NAME;
 
+/**
+ * <b>For usage in jmh tests only!</b>
+ * @see BatchingManagerHighContentionJmh
+ * @param <ConfigT>
+ * @param <PayloadT>
+ * @param <KeyT>
+ */
 class BatchProcessorSemaphore<ConfigT, PayloadT, KeyT> implements Runnable {
 
     private final ConfigT config;

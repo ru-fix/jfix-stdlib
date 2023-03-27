@@ -15,6 +15,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/**
+ * <b>For usage in jmh tests only!</b>
+ * @see BatchingManagerHighContentionJmh
+ * @param <ConfigT>
+ * @param <PayloadT>
+ * @param <KeyT>
+ */
 class BatchingManagerThreadSemaphore<ConfigT, PayloadT, KeyT> implements Runnable {
 
     private final AtomicBoolean isShutdown = new AtomicBoolean();

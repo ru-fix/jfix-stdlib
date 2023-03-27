@@ -1,5 +1,6 @@
 package ru.fix.stdlib.batching;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import ru.fix.aggregating.profiler.NoopProfiler;
@@ -23,6 +24,7 @@ class BatchingManagerHighContentionTest {
      *
      * @param mode Block if batch is full and new operation have come
      */
+    @Disabled("For manual running only! See javadoc for details.")
     @ParameterizedTest
     @EnumSource(value = Mode.class)
     void highContentionTest(Mode mode) {

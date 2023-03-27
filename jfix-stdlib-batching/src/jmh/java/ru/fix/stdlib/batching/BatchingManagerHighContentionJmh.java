@@ -8,6 +8,31 @@ import ru.fix.aggregating.profiler.NoopProfiler;
 import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 
+/**
+ * This test compares 2 cases of BatchProcessor threads tracking
+ * <dl>
+ *
+ * <dt><b>tracking via semaphore acquire/release</b></dt>
+ * <dd>{@link BatchingManagerThreadSemaphore}
+ * BatchingManagerThread tracks for free threads in batchProcessorPool using semaphore.
+ * Semaphore permits count equals to batchProcessorPool size. If all batchProcessorPool threads are busy,
+ * semaphore will have no permits and BatchingManagerThread will wait for some free thread in batchProcessorPool<p>
+ * This implementations depends on batchProcessorPool size. BatchProcessorPool size can be changed in runtime,
+ * but Semaphore permits <b>could not be changed in runtime</b> and such situation may case problems.<p>
+ * This implementation can be found in {@code src/jmh/java} and <b>it is not available in production code!</b>
+ * {@link BatchingManagerSemaphore},
+ * {@link BatchingManagerThreadSemaphore},
+ * {@link BatchProcessorSemaphore}
+ * </dd>
+ *
+ * <dt><b>tracking via object wait/notify</b></dt>
+ * <dd>{@link BatchingManagerThread}
+ * BatchingManagerThread tracks for free threads in batchProcessorPool using wait/notify synchronization.
+ * This implementations does not depend on batchProcessorPool size. Its performance practically the same as semaphore.
+ * </dd>
+ *
+ * </dl>
+ */
 @State(Scope.Benchmark)
 public class BatchingManagerHighContentionJmh {
 
