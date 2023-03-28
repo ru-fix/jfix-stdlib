@@ -28,7 +28,7 @@ import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
 import ru.fix.aggregating.profiler.*
 import ru.fix.dynamic.property.api.DynamicProperty
-import java.lang.Thread.sleep
+import java.lang.Thread.*
 import java.time.Duration
 import java.util.concurrent.*
 import java.util.concurrent.CompletableFuture.completedFuture
@@ -189,38 +189,50 @@ class SuspendableRateLimitedDispatcherTest {
     }
 
     private suspend fun `submit series of operations`(
-            ratePerSecond: Int,
-            iterations: Int
+        ratePerSecond: Int,
+        iterations: Int
     ): ProfilerReport {
 
         val profiler = AggregatingProfiler()
-        val report: ProfilerReport
+        val profilerReporter = profiler.createReporter()
+        val fullReport: ProfilerReport
 
         createDispatcher(
-                rateLimitRequestPerSecond = ratePerSecond,
-                profiler = profiler
+            rateLimitRequestPerSecond = ratePerSecond,
+            profiler = profiler
         ).use { dispatcher ->
 
             val counter = AtomicInteger(0)
+            val deferreds: List<Deferred<Int>>
+            val profilers: MutableList<Profiler> = mutableListOf()
+            val reporters: MutableList<ProfilerReporter> = mutableListOf()
+            for (i in 0 until iterations) {
+                profilers.add(i, AggregatingProfiler())
+                reporters.add(i, profilers[i].createReporter())
+            }
 
-            val profilerReporter = profiler.createReporter()
-            val profiledCall = profiler.profiledCall("operation")
-
-            val results = List(iterations) {
-                dispatcher.decorateSuspend {
-                    profiledCall.profile<Int> {
-                        counter.incrementAndGet()
+            coroutineScope {
+                deferreds = List(iterations) {
+                    async {
+                        val profiledCall = profilers[it].profiledCall("operation")
+                        dispatcher.decorateSuspend {
+                            profiledCall.profile<Int> {
+                                counter.incrementAndGet()
+                            }
+                        }
                     }
                 }
             }
 
+            val results = deferreds.map { it.await() }
+            reporters.add(profilerReporter)
+            fullReport = mergeProfileReports(reporters)
+
             counter.get().shouldBe(iterations)
             results.toSet().shouldContainAll((1..iterations).toList())
-
-            report = profilerReporter.buildReportAndReset()
         }
 
-        return report
+        return fullReport
     }
 
     @Test
@@ -545,6 +557,31 @@ class SuspendableRateLimitedDispatcherTest {
                     context
             )
 
+    private fun mergeProfileReports(reporters: MutableList<ProfilerReporter>): ProfilerReport {
+        val indicators: MutableMap<Identity, Long> = mutableMapOf()
+        val profilerCallReports: MutableList<ProfiledCallReport> = mutableListOf()
+
+        reporters.forEach { it ->
+            val report = it.buildReportAndReset()
+
+            report.indicators.forEach {
+                indicators.merge(it.key, it.value) { prev, new -> prev + new }
+            }
+
+            report.profilerCallReports.forEach { pcReport ->
+                val existReport = profilerCallReports.find { it.identity.name == pcReport.identity.name }
+                if (existReport == null) {
+                    profilerCallReports.add(pcReport)
+                } else {
+                    existReport.stopThroughputAvg = (existReport.stopThroughputAvg + pcReport.stopThroughputAvg)
+                    existReport.stopSum = (existReport.stopSum + pcReport.stopSum)
+                }
+            }
+        }
+
+        return ProfilerReport(indicators, profilerCallReports)
+    }
+
     private fun ProfilerReport.getMetric(metric: String): Long {
         return indicators.mapKeys { it.key.name }["$DISPATCHER_METRICS_PREFIX.$metric"]!!
     }
@@ -659,7 +696,9 @@ class SuspendableRateLimitedDispatcherTest {
                     logger.info { "Setting isSubmittedTaskInvoked with index $taskIndex to true" }
                     isSubmittedTaskInvoked[taskIndex]!!.set(true)
                     if (sleepTo > 0) {
-                        sleep(sleepTo)    //long operation imitation with blocking
+                        withContext(Dispatchers.IO) {
+                            sleep(sleepTo)    //long operation imitation with blocking
+                        }
                     }
                     logger.info { "Setting isSubmittedTaskFinished with index $taskIndex to true" }
                     isSubmittedTaskFinished[taskIndex]!!.set(true)
