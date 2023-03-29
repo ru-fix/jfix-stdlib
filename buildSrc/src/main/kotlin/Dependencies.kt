@@ -3,7 +3,7 @@ object Vers {
     const val gradle_kotlin = "1.5.21"
     const val kotlin_coroutines = "1.3.8"
     const val sl4j = "1.7.25"
-    const val dokkav = "1.4.30"
+    const val dokkav = "1.5.31"
     const val gradle_release_plugin = "1.4.3"
     const val junit = "5.5.2"
     const val hamkrest = "1.4.2.2"
@@ -66,6 +66,7 @@ object Libs {
     const val jmh_generator_ann = "org.openjdk.jmh:jmh-generator-annprocess:${Vers.jmh}"
     const val jmh_generator_bytecode = "org.openjdk.jmh:jmh-generator-bytecode:${Vers.jmh}"
 
+    const val dokka_gradle_plugin_id = "org.jetbrains.dokka"
     const val nexus_staging_plugin = "io.codearte.nexus-staging"
     const val nexus_publish_plugin = "de.marcphilipp.nexus-publish"
 

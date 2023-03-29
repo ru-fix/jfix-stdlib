@@ -11,7 +11,9 @@ import kotlin.reflect.KProperty
 buildscript {
     repositories {
         mavenCentral()
-        mavenLocal()
+        maven {
+            url = uri("https://plugins.gradle.org/m2/")
+        }
     }
     dependencies {
         classpath(Libs.gradle_release_plugin)
@@ -68,7 +70,7 @@ subprojects {
         plugin("maven-publish")
         plugin("signing")
         plugin("java")
-        plugin("org.jetbrains.dokka")
+        plugin(Libs.dokka_gradle_plugin_id)
         plugin(Libs.nexus_publish_plugin)
     }
 
