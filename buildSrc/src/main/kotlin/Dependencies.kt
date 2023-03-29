@@ -14,7 +14,8 @@ object Vers {
 
     const val jackson = "2.11.3"
 
-    const val jmh = "1.21"
+    const val jmh = "1.36"
+    const val jmh_plugin = "0.7.0"
 
     const val log4j = "2.12.0"
 
@@ -60,7 +61,7 @@ object Libs {
     const val aggregating_profiler = "ru.fix:aggregating-profiler:${Vers.aggregating_profiler}"
     const val dynamic_property = "ru.fix:dynamic-property-api:${Vers.dynamic_property}"
 
-    const val jmh_gradle_plugin = "me.champeau.gradle:jmh-gradle-plugin:0.5.0-rc-2"
+    const val jmh_gradle_plugin = "me.champeau.jmh"
     const val jmh = "org.openjdk.jmh:jmh-core:${Vers.jmh}"
     const val jmh_generator_ann = "org.openjdk.jmh:jmh-generator-annprocess:${Vers.jmh}"
     const val jmh_generator_bytecode = "org.openjdk.jmh:jmh-generator-bytecode:${Vers.jmh}"

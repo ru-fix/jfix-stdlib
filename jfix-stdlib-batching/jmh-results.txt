@@ -1,0 +1,3 @@
+Benchmark                                            Mode  Cnt  Score   Error  Units
+BatchingManagerHighContentionJmh.poolQueueSizeTest  thrpt   10  1,254 ± 0,343  ops/s
+BatchingManagerHighContentionJmh.semaphoreTest      thrpt   10  1,399 ± 0,275  ops/s

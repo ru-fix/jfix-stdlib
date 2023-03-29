@@ -1,23 +1,28 @@
 package ru.fix.stdlib.batching;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import ru.fix.aggregating.profiler.Identity;
 import ru.fix.aggregating.profiler.ProfiledCall;
 import ru.fix.aggregating.profiler.Profiler;
 
 import java.util.List;
+import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 
 import static ru.fix.stdlib.batching.BatchingManagerMetricsProvider.BATCHING_MANAGER_ID_TAG_NAME;
 import static ru.fix.stdlib.batching.BatchingManagerMetricsProvider.BATCHING_MANAGER_KEY_TAG_NAME;
 
-class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
-    private static final Logger log = LoggerFactory.getLogger(BatchProcessor.class);
+/**
+ * <b>For usage in jmh tests only!</b>
+ * @see BatchingManagerHighContentionJmh
+ * @param <ConfigT>
+ * @param <PayloadT>
+ * @param <KeyT>
+ */
+class BatchProcessorSemaphore<ConfigT, PayloadT, KeyT> implements Runnable {
 
     private final ConfigT config;
 
-    private final BatchProcessorsTracker batchProcessorsTracker;
+    private final Semaphore batchProcessorsTracker;
     private final List<Operation<PayloadT>> batch;
     private final BatchTask<ConfigT, PayloadT, KeyT> batchTask;
     private final KeyT key;
@@ -27,9 +32,9 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
     private final ProfiledCall awaitExecution;
     private final Identity handleMetricIdentity;
 
-    public BatchProcessor(ConfigT config,
+    BatchProcessorSemaphore(ConfigT config,
                           List<Operation<PayloadT>> batch,
-                          BatchProcessorsTracker batchProcessorsTracker,
+                          Semaphore batchProcessorsTracker,
                           BatchTask<ConfigT, PayloadT, KeyT> batchTask, KeyT key,
                           String batchManagerId,
                           Profiler profiler) {
@@ -58,7 +63,13 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
      */
     @Override
     public void run() {
-        awaitExecution.stop();
+        try {
+            batchProcessorsTracker.acquire();
+        } catch (InterruptedException exc) {
+            Thread.currentThread().interrupt();
+        } finally {
+            awaitExecution.stop();
+        }
 
         try {
             List<PayloadT> payloadBatch = batch.stream().map(Operation::getPayload).collect(Collectors.toList());
@@ -67,13 +78,9 @@ class BatchProcessor<ConfigT, PayloadT, KeyT> implements Runnable {
                 profiledCall.stop(payloadBatch.size());
             }
         } catch (InterruptedException interruptedException) {
-            log.error("BatchProcessor thread was interrupted.", interruptedException);
             Thread.currentThread().interrupt();
-        } catch (Exception exc) {
-            log.error("Exception during preparing and sending batch", exc);
         } finally {
-            log.trace("BatchProcessor thread finished");
-            batchProcessorsTracker.notifyAboutAvailableBatchProcessorThread();
+            batchProcessorsTracker.release();
         }
     }
 }

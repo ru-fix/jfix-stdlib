@@ -18,7 +18,6 @@ buildscript {
         classpath(Libs.dokka_gradle_plugin)
         classpath(Libs.gradle_kotlin_stdlib)
         classpath(Libs.gradle_kotlin_jdk8)
-        classpath(Libs.jmh_gradle_plugin)
     }
 }
 
@@ -28,6 +27,7 @@ plugins {
     `maven-publish`
     id(Libs.nexus_publish_plugin) version "0.4.0" apply false
     id(Libs.nexus_staging_plugin) version "0.21.2"
+    id(Libs.jmh_gradle_plugin) version Vers.jmh_plugin apply false
 }
 
 /**
@@ -73,13 +73,12 @@ subprojects {
     }
 
     repositories {
-        jcenter()
         mavenCentral()
         mavenLocal()
     }
 
     val sourcesJar by tasks.creating(Jar::class) {
-        classifier = "sources"
+        archiveClassifier.set("sources")
         from("src/main/java")
         from("src/main/kotlin")
     }
@@ -89,7 +88,7 @@ subprojects {
     }
 
     val dokkaJar by tasks.creating(Jar::class) {
-        classifier = "javadoc"
+        archiveClassifier.set("javadoc")
 
         from(dokkaTask.outputDirectory)
         dependsOn(dokkaTask)

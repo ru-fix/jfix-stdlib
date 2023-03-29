@@ -1,7 +1,5 @@
 package ru.fix.stdlib.batching;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import ru.fix.aggregating.profiler.Profiler;
 
 import java.util.Collection;
@@ -13,15 +11,13 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import static java.lang.String.format;
 
 /**
- * ConfigT - instance of ConfigT will be passed to {@link  ru.fix.stdlib.batching.BatchTask}
- * PayloadT - data that will be collect in batches and passed to {@link  ru.fix.stdlib.batching.BatchTask}
- * KeyT - {@link BatchingManager} will create separate batch queue for each key.
- *
- * @author Kamil Asfandiyarov
+ * <b>For usage in jmh tests only!</b>
+ * @see BatchingManagerHighContentionJmh
+ * @param <ConfigT>
+ * @param <PayloadT>
+ * @param <KeyT>
  */
-public class BatchingManager<ConfigT, PayloadT, KeyT> implements AutoCloseable {
-
-    private static final Logger log = LoggerFactory.getLogger(BatchingManager.class);
+class BatchingManagerSemaphore<ConfigT, PayloadT, KeyT> implements AutoCloseable {
 
     /**
      * Queues with operation, is limited by maxPendingOperations
@@ -36,13 +32,13 @@ public class BatchingManager<ConfigT, PayloadT, KeyT> implements AutoCloseable {
     /**
      * Monitoring queue and create BatchProcessor for executed Row
      */
-    private final BatchingManagerThread<ConfigT, PayloadT, KeyT> batchingManagerThread;
+    private final BatchingManagerThreadSemaphore<ConfigT, PayloadT, KeyT> batchingManagerThread;
 
     private final String batchManagerId;
 
     private final Profiler profiler;
 
-    public BatchingManager(ConfigT config,
+    BatchingManagerSemaphore(ConfigT config,
                            BatchTask<ConfigT, PayloadT, KeyT> batchTask,
                            BatchingParameters batchingParameters,
                            String batchManagerId,
@@ -55,7 +51,7 @@ public class BatchingManager<ConfigT, PayloadT, KeyT> implements AutoCloseable {
                 () -> pendingTableOperations.values().stream().mapToLong(Collection::size).sum()
         );
 
-        this.batchingManagerThread = new BatchingManagerThread<>(config,
+        this.batchingManagerThread = new BatchingManagerThreadSemaphore<>(config,
                 pendingTableOperations,
                 batchingParameters,
                 profiler,
@@ -77,12 +73,10 @@ public class BatchingManager<ConfigT, PayloadT, KeyT> implements AutoCloseable {
     /**
      * @param key     buffer key. {@link BatchingManager} will create separate batch queue for each key.
      * @param payload data that will be collect in batches and passed to {@link  ru.fix.stdlib.batching.BatchTask}
-     * @throws MaxPendingOperationExceededException see {@link #setMaxPendingOperations(int)}
+     * @throws MaxPendingOperationExceededException see {@link BatchingParameters#setMaxPendingOperations(int)}
      * @throws InterruptedException                 if thread was interrupted while waiting in blocking mode
      */
-    public void enqueue(KeyT key, PayloadT payload) throws MaxPendingOperationExceededException, InterruptedException {
-        log.trace("enqueue(key: {}, payload: {}", key, payload);
-
+    void enqueue(KeyT key, PayloadT payload) throws MaxPendingOperationExceededException, InterruptedException {
         Queue<Operation<PayloadT>> operationQueue =
                 pendingTableOperations.computeIfAbsent(key, k -> new ConcurrentLinkedQueue<>());
 
@@ -102,33 +96,9 @@ public class BatchingManager<ConfigT, PayloadT, KeyT> implements AutoCloseable {
         }
 
         operationQueue.add(operation);
-        if (log.isTraceEnabled()) {
-            log.trace("Queue size for key {} is {}", key, operationQueue.size());
-        }
     }
 
     private boolean isBatchLimitReached(Queue<Operation<PayloadT>> operationQueue) {
         return operationQueue.size() >= batchingParameters.getMaxPendingOperations();
     }
-
-    public BatchingManager<ConfigT, PayloadT, KeyT> setBatchThreads(int batchThreads) {
-        batchingManagerThread.setThreadCount(batchThreads);
-        return this;
-    }
-
-    public BatchingManager<ConfigT, PayloadT, KeyT> setBatchSize(int batchSize) {
-        batchingParameters.setBatchSize(batchSize);
-        return this;
-    }
-
-    public BatchingManager<ConfigT, PayloadT, KeyT> setMaxPendingOperations(int maxPendingOperations) {
-        batchingParameters.setMaxPendingOperations(maxPendingOperations);
-        return this;
-    }
-
-    public BatchingManager<ConfigT, PayloadT, KeyT> setBatchTimeout(int batchTimeout) {
-        batchingParameters.setBatchTimeout(batchTimeout);
-        return this;
-    }
-
 }
