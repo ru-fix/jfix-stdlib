@@ -9,21 +9,24 @@ dependencies {
     api(Libs.dynamic_property)
     api(Libs.aggregating_profiler)
 
-    testImplementation(Libs.kotlin_jdk8)
-    testImplementation(Libs.kotlin_stdlib)
-    testImplementation(Libs.kotlin_reflect)
-    testImplementation(Libs.kotlinx_coroutines_core)
-    testImplementation(Libs.kotlinx_coroutines_jdk8)
+    implementation(Libs.kotlin_jdk8)
+    implementation(Libs.kotlin_stdlib)
+    implementation(Libs.kotlinx_coroutines_core)
+    implementation(Libs.kotlinx_coroutines_jdk8)
+    implementation(Libs.kotlin_logging)
 
     testImplementation(Libs.hamcrest)
     testImplementation(Libs.mockito)
 
     testImplementation(Libs.junit_api)
+    testImplementation(Libs.junit_params)
     testImplementation(Libs.awaitility)
     testRuntimeOnly(Libs.junit_engine)
 
     testRuntimeOnly(Libs.slf4j_simple)
     testImplementation(Libs.kotlin_logging)
     testImplementation(Libs.kotest_assertions)
+
+    implementation(Libs.aggregating_profiler_kotlin)
 
 }
