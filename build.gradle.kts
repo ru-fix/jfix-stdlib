@@ -183,6 +183,7 @@ subprojects {
 
         withType<KotlinCompile> {
             kotlinOptions.jvmTarget = JavaVersion.VERSION_1_8.toString()
+            kotlinOptions.freeCompilerArgs += listOf("-Xjvm-default=all-compatibility")
         }
         withType<Test> {
             useJUnitPlatform()

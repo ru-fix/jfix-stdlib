@@ -16,6 +16,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import java.util.function.Supplier
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -83,10 +84,10 @@ class SuspendableRateLimitedDispatcher(
         }.await()
     }
 
-    override fun <T> compose(supplier: () -> CompletableFuture<T>): CompletableFuture<T> {
+    override fun <T> compose(supplier: Supplier<CompletableFuture<T>>): CompletableFuture<T> {
         return GlobalScope.future(Dispatchers.Unconfined) {
             decorateSuspend {
-                supplier.invoke().await()
+                supplier.get().await()
             }
         }
     }
