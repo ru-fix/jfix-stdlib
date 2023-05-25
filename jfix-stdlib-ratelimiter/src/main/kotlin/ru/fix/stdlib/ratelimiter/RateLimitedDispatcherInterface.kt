@@ -7,7 +7,7 @@ import kotlinx.coroutines.future.future
 import java.util.concurrent.CompletableFuture
 import java.util.function.Supplier
 
-interface RateLimitedDispatcherInterface {
+interface RateLimitedDispatcherInterface: AutoCloseable {
 
     suspend fun <T: Any?> decorateSuspend(supplier: suspend () -> T): T = compose {
         GlobalScope.future(Dispatchers.Unconfined) {

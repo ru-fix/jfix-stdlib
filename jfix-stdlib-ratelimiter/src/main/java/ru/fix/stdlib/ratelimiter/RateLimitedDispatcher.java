@@ -24,7 +24,7 @@ import java.util.function.Supplier;
  * When Window or Rate restriction is reached, dispatcher will stop to process requests and enqueue them in umbound queue.
  * Disaptcher executes all operations in single dedicated thread.
  */
-public class RateLimitedDispatcher implements RateLimitedDispatcherInterface, AutoCloseable {
+public class RateLimitedDispatcher implements RateLimitedDispatcherInterface {
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
     private static final String QUEUE_SIZE_INDICATOR = "queue_size";

@@ -38,7 +38,7 @@ class SuspendableRateLimitedDispatcher(
         profiler: Profiler,
         closingTimeout: DynamicProperty<Long>,
         context: CoroutineContext
-) : RateLimitedDispatcherInterface, AutoCloseable {
+) : RateLimitedDispatcherInterface {
 
     companion object {
         private const val ACTIVE_ASYNC_OPERATIONS = "active_async_operations"
