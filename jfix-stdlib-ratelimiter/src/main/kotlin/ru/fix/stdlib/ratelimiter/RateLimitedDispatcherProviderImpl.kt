@@ -11,9 +11,17 @@ class RateLimitedDispatcherProviderImpl(
     private val profiler: Profiler,
     private val context: CoroutineContext,
     private val limiterId: String,
-) : RateLimitedDispatcherProvider {
+) : RateLimitedDispatcherProvider, AutoCloseable {
 
-    private var rateLimitedDispatcher: AtomicReference<RateLimitedDispatcherInterface?> = AtomicReference(null)
+    private val rateLimitedDispatcherSuspendable: SuspendableRateLimitedDispatcher by lazy {
+        createSuspendableRateLimitedDispatcher()
+    }
+
+    private val rateLimitedDispatcher: RateLimitedDispatcher by lazy {
+        createRateLimitedDispatcher()
+    }
+
+    private var dispatcherReference: AtomicReference<RateLimitedDispatcherInterface?> = AtomicReference(null)
     private var isSuspendable = AtomicReference(rateLimiterSettings.get().isSuspendable)
 
     init {
@@ -27,17 +35,19 @@ class RateLimitedDispatcherProviderImpl(
         updateDispatcher(isSuspendable.get())
     }
 
-    @Synchronized
-    override fun provideDispatcher(): RateLimitedDispatcherInterface = rateLimitedDispatcher.get()!!
+    override fun provideDispatcher(): RateLimitedDispatcherInterface = dispatcherReference.get()!!
 
-    @Synchronized
+    override fun close() {
+        rateLimitedDispatcher.close()
+        rateLimitedDispatcherSuspendable.close()
+    }
+
     private fun updateDispatcher(newValue: Boolean) {
-        rateLimitedDispatcher.get()?.close()
-        rateLimitedDispatcher.set(
+        dispatcherReference.set(
             if (newValue) {
-                createSuspendableRateLimitedDispatcher()
+                rateLimitedDispatcherSuspendable
             } else {
-                createRateLimitedDispatcher()
+                rateLimitedDispatcher
             }
         )
         isSuspendable.set(newValue)
