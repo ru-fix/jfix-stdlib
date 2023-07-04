@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.CoroutineContext
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
-class SuspendableRateLimitedDispatcherTest {
+open class SuspendableRateLimitedDispatcherTest {
     private companion object : KLogging() {
         const val DISPATCHER_NAME = "dispatcher-name"
         const val DISPATCHER_METRICS_PREFIX = "RateLimiterDispatcher.$DISPATCHER_NAME"
@@ -66,7 +66,7 @@ class SuspendableRateLimitedDispatcherTest {
     val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 
     @Nested
-    inner class CompletableFutureTest {
+    inner class CompletableFutureTests {
         @Test
         fun `dispatch async operation with exceptional CompletableFuture, operation invoked and it's result returned`() {
             createDispatcher().use { dispatcher ->
@@ -570,7 +570,7 @@ class SuspendableRateLimitedDispatcherTest {
         trackableDispatcher.completeAllAndClose()
     }
 
-    private fun createDispatcher(
+    protected open fun createDispatcher(
             rateLimitRequestPerSecond: Int = 500,
             closingTimeout: Int = 5000,
             profiler: Profiler = NoopProfiler(),

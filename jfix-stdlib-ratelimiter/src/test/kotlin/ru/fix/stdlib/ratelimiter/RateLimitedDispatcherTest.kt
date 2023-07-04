@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 @Execution(ExecutionMode.CONCURRENT)
-class RateLimitedDispatcherTest {
+open class RateLimitedDispatcherTest {
     private companion object : KLogging() {
         const val DISPATCHER_NAME = "dispatcher-name"
         const val DISPATCHER_METRICS_PREFIX = "RateLimiterDispatcher.$DISPATCHER_NAME"
@@ -112,7 +112,7 @@ class RateLimitedDispatcherTest {
 
 
     @Test
-    fun `if windows size is 0, then restricted only by limiter `() {
+    fun `if windows size is 0, then restricted only by limiter`() {
         `async operations are restricted by limiter limit `(0)
     }
 
@@ -456,7 +456,7 @@ class RateLimitedDispatcherTest {
                 .cause.shouldBeInstanceOf<RejectedExecutionException>()
     }
 
-    fun createDispatcher(
+    protected open fun createDispatcher(
             rateLimitRequestPerSecond: Int = 500,
             window: DynamicProperty<Int> = DynamicProperty.of(0),
             closingTimeout: Int = 5000,
