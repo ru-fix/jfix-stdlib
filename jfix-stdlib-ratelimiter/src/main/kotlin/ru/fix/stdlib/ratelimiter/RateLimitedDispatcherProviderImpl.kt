@@ -9,48 +9,41 @@ class RateLimitedDispatcherProviderImpl(
     private val rateLimiterFactory: RateLimiterFactory,
     private val rateLimiterSettings: DynamicProperty<RateLimiterSettings>,
     private val profiler: Profiler,
-    private val context: CoroutineContext,
+    private val suspendableWaitingScopeContext: CoroutineContext,
     private val limiterId: String,
+    private val window: DynamicProperty<Int> = DynamicProperty.of(0),
 ) : RateLimitedDispatcherProvider, AutoCloseable {
 
-    private val rateLimitedDispatcherSuspendable: SuspendableRateLimitedDispatcher by lazy {
+    private val rateLimitedDispatcherSuspendable: Lazy<SuspendableRateLimitedDispatcher> = lazy {
         createSuspendableRateLimitedDispatcher()
     }
 
-    private val rateLimitedDispatcher: RateLimitedDispatcher by lazy {
+    private val rateLimitedDispatcher: Lazy<RateLimitedDispatcher> = lazy {
         createRateLimitedDispatcher()
     }
 
-    private var dispatcherReference: AtomicReference<RateLimitedDispatcherInterface?> = AtomicReference(null)
-    private var isSuspendable = AtomicReference(rateLimiterSettings.get().isSuspendable)
+    private var useSuspendable = AtomicReference(rateLimiterSettings.get().isSuspendable)
 
     init {
         rateLimiterSettings.map { it.isSuspendable }
             .createSubscription()
-            .setAndCallListener { _, newValue ->
-                if (isSuspendable.get() != newValue) {
-                    updateDispatcher(newValue)
-                }
+            .setAndCallListener { oldValue, newValue ->
+                updateDispatcher(newValue ?: oldValue)
             }
-        updateDispatcher(isSuspendable.get())
     }
 
-    override fun provideDispatcher(): RateLimitedDispatcherInterface = dispatcherReference.get()!!
+    override fun provideDispatcher(): RateLimitedDispatcherInterface =
+        if (useSuspendable.get()) rateLimitedDispatcherSuspendable.value else rateLimitedDispatcher.value
+
 
     override fun close() {
-        rateLimitedDispatcher.close()
-        rateLimitedDispatcherSuspendable.close()
+        if (rateLimitedDispatcher.isInitialized()) rateLimitedDispatcher.value.close()
+        if (rateLimitedDispatcherSuspendable.isInitialized()) rateLimitedDispatcherSuspendable.value.close()
     }
 
     private fun updateDispatcher(newValue: Boolean) {
-        dispatcherReference.set(
-            if (newValue) {
-                rateLimitedDispatcherSuspendable
-            } else {
-                rateLimitedDispatcher
-            }
-        )
-        isSuspendable.set(newValue)
+        if (newValue) rateLimitedDispatcherSuspendable.value else rateLimitedDispatcher.value
+        useSuspendable.set(newValue)
     }
 
     private fun createSuspendableRateLimitedDispatcher(): SuspendableRateLimitedDispatcher {
@@ -63,7 +56,7 @@ class RateLimitedDispatcherProviderImpl(
             rateLimiter,
             profiler,
             rateLimiterSettings.map { it.closeTimeout.toMillis() },
-            context,
+            suspendableWaitingScopeContext,
         )
     }
 
@@ -76,6 +69,7 @@ class RateLimitedDispatcherProviderImpl(
             limiterId,
             rateLimiter,
             profiler,
+            window,
             rateLimiterSettings.map { it.closeTimeout.toMillis() },
         )
     }
