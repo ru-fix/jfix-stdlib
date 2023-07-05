@@ -9,23 +9,26 @@ import io.kotest.matchers.doubles.shouldBeBetween
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.throwable.shouldHaveCause
 import io.kotest.matchers.types.shouldBeInstanceOf
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.future.future
 import kotlinx.coroutines.runBlocking
 import mu.KLogging
 import org.awaitility.Awaitility.await
-import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertTimeoutPreemptively
 import org.junit.jupiter.api.parallel.Execution
 import org.junit.jupiter.api.parallel.ExecutionMode
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 import ru.fix.aggregating.profiler.AggregatingProfiler
 import ru.fix.aggregating.profiler.NoopProfiler
 import ru.fix.aggregating.profiler.Profiler
 import ru.fix.aggregating.profiler.ProfilerReport
 import ru.fix.dynamic.property.api.AtomicProperty
 import ru.fix.dynamic.property.api.DynamicProperty
+import ru.fix.stdlib.ratelimiter.enums.DispatcherType
 import java.lang.Thread.sleep
 import java.time.Duration
 import java.util.concurrent.*
@@ -35,21 +38,24 @@ import java.util.concurrent.atomic.AtomicInteger
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 @Execution(ExecutionMode.CONCURRENT)
-open class RateLimitedDispatcherTest {
+class RateLimitedDispatcherTest {
     private companion object : KLogging() {
         const val DISPATCHER_NAME = "dispatcher-name"
         const val DISPATCHER_METRICS_PREFIX = "RateLimiterDispatcher.$DISPATCHER_NAME"
     }
 
-    @Test
-    fun `dispatch async operation with user defined async result type, operation invoked and it's result returned`() {
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `dispatch async operation with user defined async result type, operation invoked and it's result returned`(
+        dispatcherType: DispatcherType
+    ) {
         class UserAsyncResult {
             fun whenComplete(callback: () -> Unit) {
                 callback()
             }
         }
 
-        val dispatcher = createDispatcher()
+        val dispatcher = createDispatcher(dispatcherType)
 
         val asyncResultInstance = UserAsyncResult()
 
@@ -67,9 +73,12 @@ open class RateLimitedDispatcherTest {
         dispatcher.close()
     }
 
-    @Test
-    fun `dispatch async operation with successfull CompletableFuture, operation invoked and it's result returned`() {
-        val dispatcher = createDispatcher()
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `dispatch async operation with successfull CompletableFuture, operation invoked and it's result returned`(
+        dispatcherType: DispatcherType
+    ) {
+        val dispatcher = createDispatcher(dispatcherType)
 
         val operationResult = Object()
         fun userAsyncOperation(): CompletableFuture<Any> {
@@ -84,9 +93,12 @@ open class RateLimitedDispatcherTest {
     }
 
 
-    @Test
-    fun `dispatch async operation with exceptional CompletableFuture, operation invoked and it's result returned`() {
-        val dispatcher = createDispatcher()
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `dispatch async operation with exceptional CompletableFuture, operation invoked and it's result returned`(
+        dispatcherType: DispatcherType
+    ) {
+        val dispatcher = createDispatcher(dispatcherType)
 
         val asyncOperationException = Exception("some error")
 
@@ -111,39 +123,49 @@ open class RateLimitedDispatcherTest {
     }
 
 
-    @Test
-    fun `if windows size is 0, then restricted only by limiter`() {
-        `async operations are restricted by limiter limit `(0)
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `if windows size is 0, then restricted only by limiter`(
+        dispatcherType: DispatcherType
+    ) {
+        `async operations are restricted by limiter limit `(0, dispatcherType)
     }
 
 
-    @Test
-    fun `if window size is not empty and quite big, restricted by limiter`() {
-        `async operations are restricted by limiter limit `(100_000)
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `if window size is not empty and quite big, restricted by limiter`(
+        dispatcherType: DispatcherType
+    ) {
+        `async operations are restricted by limiter limit `(100_000, dispatcherType)
     }
 
-    private fun `async operations are restricted by limiter limit `(windowSize: Int) {
-        val RATE_PER_SECOND = 500
-        val ITERATIONS = 5 * RATE_PER_SECOND
+    private fun `async operations are restricted by limiter limit `(windowSize: Int, dispatcherType: DispatcherType) {
+        val ratePerSecond = 500
+        val iterations = 5 * ratePerSecond
 
         val report = `submit series of operations`(
-                ratePerSecond = RATE_PER_SECOND,
-                interations = ITERATIONS,
-                windowSize = DynamicProperty.of(windowSize))
+                ratePerSecond = ratePerSecond,
+                iterations = iterations,
+                windowSize = DynamicProperty.of(windowSize),
+                dispatcherType = dispatcherType
+        )
 
         val operationReport = report.profilerCallReports.single { it.identity.name == "operation" }
 
         logger.info("Throughput $operationReport")
         operationReport.stopThroughputAvg.shouldBeBetween(
-                RATE_PER_SECOND.toDouble(),
-                RATE_PER_SECOND.toDouble(),
-                RATE_PER_SECOND.toDouble() * 0.25)
+                ratePerSecond.toDouble(),
+                ratePerSecond.toDouble(),
+                ratePerSecond.toDouble() * 0.25)
     }
 
     private fun `submit series of operations`(
             ratePerSecond: Int,
-            interations: Int,
-            windowSize: DynamicProperty<Int>): ProfilerReport {
+            iterations: Int,
+            windowSize: DynamicProperty<Int>,
+            dispatcherType: DispatcherType
+    ): ProfilerReport {
 
 
         val profiler = AggregatingProfiler()
@@ -151,7 +173,8 @@ open class RateLimitedDispatcherTest {
         val dispatcher = createDispatcher(
                 rateLimitRequestPerSecond = ratePerSecond,
                 window = windowSize,
-                profiler = profiler
+                profiler = profiler,
+                dispatcherType = dispatcherType
         )
 
         val counter = AtomicInteger(0)
@@ -160,7 +183,7 @@ open class RateLimitedDispatcherTest {
         val profilerReporter = profiler.createReporter()
         val profiledCall = profiler.profiledCall("operation")
 
-        val features = List(interations) {
+        val features = List(iterations) {
             dispatcher.compose {
                 profiledCall.profile<CompletableFuture<Int>> {
                     completedFuture(counter.incrementAndGet())
@@ -168,11 +191,11 @@ open class RateLimitedDispatcherTest {
             }
         }
 
-        logger.info("Submit $interations operations.")
+        logger.info("Submit $iterations operations.")
         features.forEach { it.join() }
 
-        counter.get().shouldBe(interations)
-        features.map { it.join() }.toSet().containsAll((1..interations).toList())
+        counter.get().shouldBe(iterations)
+        features.map { it.join() }.toSet().containsAll((1..iterations).toList())
 
         val report = profilerReporter.buildReportAndReset()
         dispatcher.close()
@@ -180,9 +203,12 @@ open class RateLimitedDispatcherTest {
         return report;
     }
 
-    @Test
-    fun `when window of uncompleted operations is full no new operation is dispatched`() {
-        val dispatcher = TrackableDispatcher()
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `when window of uncompleted operations is full no new operation is dispatched`(
+        dispatcherType: DispatcherType
+    ) {
+        val dispatcher = TrackableDispatcher(dispatcherType)
         dispatcher.windowProperty.set(10)
 
         dispatcher.submitTasks(1..11)
@@ -201,28 +227,33 @@ open class RateLimitedDispatcherTest {
         dispatcher.completeAllAndClose()
     }
 
-    @Test
-    fun `'queue_wait', 'acquire_limit', 'acquire_window', 'supplied_operation', 'queue_size', 'active_async_operations' metrics gathered during execution`() {
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `'queue_wait', 'acquire_limit', 'acquire_window', 'supplied_operation', 'queue_size', 'active_async_operations' metrics gathered during execution`(
+        dispatcherType: DispatcherType
+    ) {
 
-        val RATE_PER_SECOND = 500
-        val ITERATIONS = 5 * RATE_PER_SECOND
+        val ratePerSecond = 500
+        val iterations = 5 * ratePerSecond
 
         val report = `submit series of operations`(
-                ratePerSecond = RATE_PER_SECOND,
-                interations = ITERATIONS,
-                windowSize = DynamicProperty.of(100))
+                ratePerSecond = ratePerSecond,
+                iterations = iterations,
+                windowSize = DynamicProperty.of(100),
+                dispatcherType = dispatcherType
+        )
 
         report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.queue_wait" }
-                .stopSum.shouldBe(ITERATIONS)
+                .stopSum.shouldBe(iterations)
 
         report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.acquire_window" }
-                .stopSum.shouldBe(ITERATIONS)
+                .stopSum.shouldBe(iterations)
 
         report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.acquire_limit" }
-                .stopSum.shouldBe(ITERATIONS)
+                .stopSum.shouldBe(iterations)
 
         report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.supply_operation" }
-                .stopSum.shouldBe(ITERATIONS)
+                .stopSum.shouldBe(iterations)
 
         report.indicators.map { it.key.name }.shouldContain("$DISPATCHER_METRICS_PREFIX.queue_size")
 
@@ -231,11 +262,14 @@ open class RateLimitedDispatcherTest {
         logger.info { "Resulting profiler report: $report" }
     }
 
-    @Test
-    fun `indicators 'queue_size' and 'active_async_operations' adjusted according to number of queued and active operations`() {
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `indicators 'queue_size' and 'active_async_operations' adjusted according to number of queued and active operations`(
+        dispatcherType: DispatcherType
+    ) {
         val profiler = AggregatingProfiler()
         val reporter = profiler.createReporter()
-        val trackableDispatcher = TrackableDispatcher(profiler)
+        val trackableDispatcher = TrackableDispatcher(dispatcherType, profiler)
 
         trackableDispatcher.windowProperty.set(10)
         trackableDispatcher.submitTasks(1..12)
@@ -269,9 +303,12 @@ open class RateLimitedDispatcherTest {
         trackableDispatcher.completeAllAndClose()
     }
 
-    @Test
-    fun `WHEN many fast CompletableFuture tasks completed THEN 'active_async_operations' is 0`() {
-        val report = `submit series of operations`(500, 4000, DynamicProperty.of(1000))
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `WHEN many fast CompletableFuture tasks completed THEN 'active_async_operations' is 0`(
+        dispatcherType: DispatcherType
+    ) {
+        val report = `submit series of operations`(500, 4000, DynamicProperty.of(1000), dispatcherType)
 
         logger.info { report }
         report.indicators.mapKeys { it.key.name }.assertSoftly {
@@ -279,11 +316,14 @@ open class RateLimitedDispatcherTest {
         }
     }
 
-    @Test
-    fun `WHEN completed futures arrived THEN indicators are correctly adjusted`() {
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `WHEN completed futures arrived THEN indicators are correctly adjusted`(
+        dispatcherType: DispatcherType
+    ) {
         val profiler = AggregatingProfiler()
         val reporter = profiler.createReporter()
-        val trackableDispatcher = TrackableDispatcher(profiler)
+        val trackableDispatcher = TrackableDispatcher(dispatcherType, profiler)
 
         trackableDispatcher.windowProperty.set(5)
         trackableDispatcher.submitCompletedTasks(1..4)
@@ -314,10 +354,13 @@ open class RateLimitedDispatcherTest {
         trackableDispatcher.completeAllAndClose()
     }
 
-    @Test
-    fun `increasing window size allows to submit new operations up to the new limit`() {
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `increasing window size allows to submit new operations up to the new limit`(
+        dispatcherType: DispatcherType
+    ) {
 
-        val trackableDispatcher = TrackableDispatcher()
+        val trackableDispatcher = TrackableDispatcher(dispatcherType)
         trackableDispatcher.windowProperty.set(10)
 
         trackableDispatcher.submitTasks(1..11)
@@ -339,9 +382,10 @@ open class RateLimitedDispatcherTest {
     }
 
 
-    @Test
-    fun `decreasing window size reduces limit`() {
-        val trackableDispatcher = TrackableDispatcher()
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `decreasing window size reduces limit`(dispatcherType: DispatcherType) {
+        val trackableDispatcher = TrackableDispatcher(dispatcherType)
         trackableDispatcher.windowProperty.set(10)
 
         trackableDispatcher.submitTasks(1..10)
@@ -370,10 +414,11 @@ open class RateLimitedDispatcherTest {
      * When dispatcher closingTimeout is enough for pending tasks to complete
      * such tasks will complete normally
      */
-    @Test
-    fun `on shutdown fast tasks complete normally`() {
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `on shutdown fast tasks complete normally`(dispatcherType: DispatcherType) {
 
-        val dispatch = createDispatcher(closingTimeout = 5_000)
+        val dispatch = createDispatcher(closingTimeout = 5_000, dispatcherType = dispatcherType)
 
         assertTimeoutPreemptively(Duration.ofSeconds(10)) {
 
@@ -405,9 +450,10 @@ open class RateLimitedDispatcherTest {
         }
     }
 
-    @Test
-    fun `on shutdown slow tasks complete exceptionally`() {
-        val dispatch = createDispatcher(closingTimeout = 0)
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `on shutdown slow tasks complete exceptionally`(dispatcherType: DispatcherType) {
+        val dispatch = createDispatcher(closingTimeout = 0, dispatcherType = dispatcherType)
 
         assertTimeoutPreemptively(Duration.ofSeconds(5)) {
             val blockingTaskIsStarted = CountDownLatch(1)
@@ -440,9 +486,10 @@ open class RateLimitedDispatcherTest {
         }
     }
 
-    @Test
-    fun `task, submitted in closed dispatcher, is rejected with exception`() {
-        val dispatcher = createDispatcher()
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `task, submitted in closed dispatcher, is rejected with exception`(dispatcherType: DispatcherType) {
+        val dispatcher = createDispatcher(dispatcherType)
         dispatcher.close()
 
         val result = dispatcher.compose {
@@ -456,27 +503,50 @@ open class RateLimitedDispatcherTest {
                 .cause.shouldBeInstanceOf<RejectedExecutionException>()
     }
 
-    protected open fun createDispatcher(
+    private fun createDispatcher(
+            dispatcherType: DispatcherType,
             rateLimitRequestPerSecond: Int = 500,
             window: DynamicProperty<Int> = DynamicProperty.of(0),
             closingTimeout: Int = 5000,
-            profiler: Profiler = NoopProfiler()) =
-            RateLimitedDispatcher(
-                    DISPATCHER_NAME,
-                    ConfigurableRateLimiter("rate-limiter-name", rateLimitRequestPerSecond),
-                    profiler,
-                    window,
-                    DynamicProperty.of(closingTimeout.toLong())
+            profiler: Profiler = NoopProfiler()): RateLimitedDispatcher {
+        return when(dispatcherType) {
+            DispatcherType.SIMPLE -> RateLimitedDispatcher(
+                DISPATCHER_NAME,
+                ConfigurableRateLimiter("rate-limiter-name", rateLimitRequestPerSecond),
+                profiler,
+                window,
+                DynamicProperty.of(closingTimeout.toLong())
             )
+            DispatcherType.PROVIDER -> {
+                RateLimitedDispatcherProviderImpl(
+                    rateLimiterFactory = RateLimiterTestFactory(),
+                    rateLimiterSettings = DynamicProperty.of(
+                        RateLimiterSettings(
+                            limitPerSec = rateLimitRequestPerSecond.toDouble(),
+                            closeTimeout = Duration.ofSeconds(closingTimeout.toLong()),
+                            isSuspendable = false
+                        )
+                    ),
+                    profiler = profiler,
+                    suspendableWaitingScopeContext = Dispatchers.Default,
+                    limiterId = DISPATCHER_NAME,
+                    window = window
+                ).provideDispatcher() as RateLimitedDispatcher
+            }
+        }
+
+    }
+
 
     inner class TrackableDispatcher(
+            dispatcherType: DispatcherType,
             profiler: Profiler = NoopProfiler()
     ) {
 
         val windowProperty = AtomicProperty(0)
-        val dispatcher = createDispatcher(profiler = profiler, window = windowProperty)
-        val submittedTasksResults = HashMap<Int, CompletableFuture<Any?>>()
-        val isSubmittedTaskInvoked = HashMap<Int, AtomicBoolean>()
+        private val dispatcher = createDispatcher(profiler = profiler, window = windowProperty, dispatcherType = dispatcherType)
+        private val submittedTasksResults = HashMap<Int, CompletableFuture<Any?>>()
+        private val isSubmittedTaskInvoked = HashMap<Int, AtomicBoolean>()
 
         fun submitCompletedTasks(tasks: IntRange) {
             for (task in tasks) {
@@ -528,9 +598,10 @@ open class RateLimitedDispatcherTest {
 
     }
 
-    @Test
-    fun `invoke suspend function wrapped to completable future`() {
-        val dispatcher = createDispatcher()
+    @ParameterizedTest
+    @EnumSource(DispatcherType::class)
+    fun `invoke suspend function wrapped to completable future`(dispatcherType: DispatcherType) {
+        val dispatcher = createDispatcher(dispatcherType)
 
         val suspendFunctionInvoked = AtomicBoolean(false)
 
@@ -549,4 +620,5 @@ open class RateLimitedDispatcherTest {
 
         }
     }
+
 }
