@@ -21,15 +21,14 @@ import kotlinx.coroutines.future.future
 import mu.KLogging
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
-import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.MethodSource
 import ru.fix.aggregating.profiler.*
 import ru.fix.dynamic.property.api.DynamicProperty
-import ru.fix.stdlib.ratelimiter.enums.DispatcherType
 import java.lang.Thread.*
 import java.time.Duration
 import java.util.concurrent.*
@@ -51,25 +50,13 @@ class SuspendableRateLimitedDispatcherTest {
             listOf(
                 with(AggregatingProfiler()) {
                     return@with Arguments.of(
-                        SuspendableRateLimitedDispatcherTest().TrackableDispatcherWithCF(this, DispatcherType.SIMPLE),
+                        SuspendableRateLimitedDispatcherTest().TrackableDispatcherWithCF(this),
                         this.createReporter()
                     )
                 },
                 with(AggregatingProfiler()) {
                     return@with Arguments.of(
-                        SuspendableRateLimitedDispatcherTest().TrackableDispatcherWithCF(this, DispatcherType.PROVIDER),
-                        this.createReporter()
-                    )
-                },
-                with(AggregatingProfiler()) {
-                    return@with Arguments.of(
-                        SuspendableRateLimitedDispatcherTest().TrackableDispatcherWithSuspend(this, DispatcherType.SIMPLE),
-                        this.createReporter()
-                    )
-                },
-                with(AggregatingProfiler()) {
-                    return@with Arguments.of(
-                        SuspendableRateLimitedDispatcherTest().TrackableDispatcherWithSuspend(this, DispatcherType.PROVIDER),
+                        SuspendableRateLimitedDispatcherTest().TrackableDispatcherWithSuspend(this),
                         this.createReporter()
                     )
                 },
@@ -80,12 +67,9 @@ class SuspendableRateLimitedDispatcherTest {
 
     @Nested
     inner class CompletableFutureTests {
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
-        fun `dispatch async operation with exceptional CompletableFuture, operation invoked and it's result returned`(
-            dispatcherType: DispatcherType
-        ) {
-            createDispatcher(dispatcherType).use { dispatcher ->
+        @Test
+        fun `dispatch async operation with exceptional CompletableFuture, operation invoked and it's result returned`() {
+            createDispatcher().use { dispatcher ->
 
                 val asyncOperationException = Exception("some error")
 
@@ -111,13 +95,11 @@ class SuspendableRateLimitedDispatcherTest {
             }
         }
 
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
-        fun `series of operations with CompletableFuture`(dispatcherType: DispatcherType) {
+        @Test
+        fun `series of operations with CompletableFuture`() {
             val report = `submit series of operations with CF`(
                 ratePerSecond = RATE_PER_SECOND,
-                iterations = ITERATIONS,
-                dispatcherType = dispatcherType
+                iterations = ITERATIONS
             )
 
             val operationReport = report.profilerCallReports.single { it.identity.name == "operation" }
@@ -129,15 +111,11 @@ class SuspendableRateLimitedDispatcherTest {
                 RATE_PER_SECOND.toDouble() * 0.25)
         }
 
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
-        fun `'acquire_limit', 'supply_operation', 'active_async_operations' metrics gathered during execution with CompletableFuture`(
-            dispatcherType: DispatcherType
-        ) {
+        @Test
+        fun `'acquire_limit', 'supply_operation', 'active_async_operations' metrics gathered during execution with CompletableFuture`() {
             val report = `submit series of operations with CF`(
                 ratePerSecond = RATE_PER_SECOND,
-                iterations = ITERATIONS,
-                dispatcherType = dispatcherType
+                iterations = ITERATIONS
             )
 
             report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.acquire_limit" }
@@ -151,12 +129,9 @@ class SuspendableRateLimitedDispatcherTest {
             logger.info { "Resulting profiler report: $report" }
         }
 
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
-        fun `WHEN many fast CompletableFuture tasks completed THEN 'active_async_operations' is 0`(
-            dispatcherType: DispatcherType
-        ) {
-            val report = `submit series of operations with CF`(500, 4000, dispatcherType)
+        @Test
+        fun `WHEN many fast CompletableFuture tasks completed THEN 'active_async_operations' is 0`() {
+            val report = `submit series of operations with CF`(500, 4000)
 
             logger.info { report }
             report.assertSoftly {
@@ -169,13 +144,12 @@ class SuspendableRateLimitedDispatcherTest {
          * When dispatcher closingTimeout is enough for pending tasks to complete
          * such tasks will complete normally
          */
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
+        @Test
         @Timeout(10, unit = TimeUnit.SECONDS)
-        fun `on shutdown fast tasks with CompletableFuture complete normally`(dispatcherType: DispatcherType) {
+        fun `on shutdown fast tasks with CompletableFuture complete normally`() {
 
             val futures: List<CompletableFuture<*>>
-            createDispatcher(closingTimeout = 5_000, dispatcherType = dispatcherType).use { dispatcher ->
+            createDispatcher(closingTimeout = 5_000).use { dispatcher ->
                 futures = List(3) {
                     dispatcher.compose {
                         completedFuture(true)
@@ -189,13 +163,12 @@ class SuspendableRateLimitedDispatcherTest {
             }
         }
 
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
+        @Test
         @Timeout(5, unit = TimeUnit.SECONDS)
-        fun `on shutdown slow tasks with CompletableFuture complete exceptionally`(dispatcherType: DispatcherType) {
+        fun `on shutdown slow tasks with CompletableFuture complete exceptionally`() {
 
             val expectedException: Throwable
-            createDispatcher(closingTimeout = 0, dispatcherType = dispatcherType).use { dispatcher ->
+            createDispatcher(closingTimeout = 0).use { dispatcher ->
 
                 for (i in 1..3) {
                     scope.launch {
@@ -215,12 +188,9 @@ class SuspendableRateLimitedDispatcherTest {
             expectedException.message!!.shouldContain("timeout while waiting for coroutines finishing")
         }
 
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
-        fun `task with CompletableFuture, submitted in closed dispatcher, is rejected with exception`(
-            dispatcherType: DispatcherType
-        ) {
-            val dispatcher = createDispatcher(dispatcherType)
+        @Test
+        fun `task with CompletableFuture, submitted in closed dispatcher, is rejected with exception`() {
+            val dispatcher = createDispatcher()
             dispatcher.close()
 
             val t = shouldThrowExactly<CompletionException> {
@@ -236,10 +206,9 @@ class SuspendableRateLimitedDispatcherTest {
             return
         }
 
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
-        fun `invoke suspend function wrapped to completable future`(dispatcherType: DispatcherType) {
-            createDispatcher(dispatcherType).use { dispatcher ->
+        @Test
+        fun `invoke suspend function wrapped to completable future`() {
+            createDispatcher().use { dispatcher ->
 
                 val suspendFunctionInvoked = AtomicBoolean(false)
 
@@ -260,8 +229,7 @@ class SuspendableRateLimitedDispatcherTest {
 
         private fun `submit series of operations with CF`(
             ratePerSecond: Int,
-            iterations: Int,
-            dispatcherType: DispatcherType
+            iterations: Int
         ): ProfilerReport {
 
             val profiler = AggregatingProfiler()
@@ -270,8 +238,7 @@ class SuspendableRateLimitedDispatcherTest {
             createDispatcher(
                 rateLimitRequestPerSecond = ratePerSecond,
                 profiler = profiler,
-                context = Dispatchers.Unconfined,
-                dispatcherType = dispatcherType,
+                context = Dispatchers.Unconfined
             ).use { dispatcher ->
 
                 val counter = AtomicInteger(0)
@@ -301,12 +268,9 @@ class SuspendableRateLimitedDispatcherTest {
 
     @Nested
     inner class SuspendTests {
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
-        fun `dispatch suspend operation with exceptional result, operation invoked and it's result returned`(
-            dispatcherType: DispatcherType
-        ) = runBlocking {
-            createDispatcher(dispatcherType).use { dispatcher ->
+        @Test
+        fun `dispatch suspend operation with exceptional result, operation invoked and it's result returned`() = runBlocking {
+            createDispatcher().use { dispatcher ->
 
                 val asyncOperationException = Exception("some error")
 
@@ -325,57 +289,50 @@ class SuspendableRateLimitedDispatcherTest {
 
         }
 
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
-        fun `series of operations`(dispatcherType: DispatcherType) = runBlocking {
-            val ratePerSecond = 500
-            val iterations = 5 * ratePerSecond
+        @Test
+        fun `series of operations`() = runBlocking {
+            val RATE_PER_SECOND = 500
+            val ITERATIONS = 5 * RATE_PER_SECOND
 
             val report = `submit series of operations`(
-                ratePerSecond = ratePerSecond,
-                iterations = iterations,
-                dispatcherType = dispatcherType
+                ratePerSecond = RATE_PER_SECOND,
+                iterations = ITERATIONS
             )
 
             val operationReport = report.profilerCallReports.single { it.identity.name == "operation" }
 
             logger.info("Throughput $operationReport")
             operationReport.stopThroughputAvg.shouldBeBetween(
-                ratePerSecond.toDouble(),
-                ratePerSecond.toDouble(),
-                ratePerSecond.toDouble() * 0.25)
+                RATE_PER_SECOND.toDouble(),
+                RATE_PER_SECOND.toDouble(),
+                RATE_PER_SECOND.toDouble() * 0.25)
         }
 
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
-        fun `'acquire_limit', 'supply_operation', 'active_async_operations' metrics gathered during execution`(
-            dispatcherType: DispatcherType
-        ) = runBlocking {
+        @Test
+        fun `'acquire_limit', 'supply_operation', 'active_async_operations' metrics gathered during execution`() = runBlocking {
 
-            val ratePerSecond = 500
-            val iterations = 5 * ratePerSecond
+            val RATE_PER_SECOND = 500
+            val ITERATIONS = 5 * RATE_PER_SECOND
 
             val report = `submit series of operations`(
-                ratePerSecond = ratePerSecond,
-                iterations = iterations,
-                dispatcherType = dispatcherType
+                ratePerSecond = RATE_PER_SECOND,
+                iterations = ITERATIONS
             )
 
             report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.acquire_limit" }
-                .stopSum.shouldBe(iterations)
+                .stopSum.shouldBe(ITERATIONS)
 
             report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.supply_operation" }
-                .stopSum.shouldBe(iterations)
+                .stopSum.shouldBe(ITERATIONS)
 
             report.indicators.map { it.key.name }.shouldContain("$DISPATCHER_METRICS_PREFIX.active_async_operations")
 
             logger.info { "Resulting profiler report: $report" }
         }
 
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
-        fun `WHEN many fast tasks completed THEN 'active_async_operations' is 0`(dispatcherType: DispatcherType) = runBlocking {
-            val report = `submit series of operations`(500, 4000, dispatcherType)
+        @Test
+        fun `WHEN many fast tasks completed THEN 'active_async_operations' is 0`() = runBlocking {
+            val report = `submit series of operations`(500, 4000)
 
             logger.info { report }
             report.assertSoftly {
@@ -388,13 +345,12 @@ class SuspendableRateLimitedDispatcherTest {
          * When dispatcher closingTimeout is enough for pending tasks to complete
          * such tasks will complete normally
          */
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
+        @Test
         @Timeout(10, unit = TimeUnit.SECONDS)
-        fun `on shutdown fast tasks complete normally`(dispatcherType: DispatcherType) = runBlocking {
+        fun `on shutdown fast tasks complete normally`() = runBlocking {
 
             val results: List<Deferred<Boolean>>
-            createDispatcher(closingTimeout = 5_000, dispatcherType = dispatcherType).use { dispatcher ->
+            createDispatcher(closingTimeout = 5_000).use { dispatcher ->
                 results = List(3) {
                     async {
                         dispatcher.decorateSuspend {
@@ -410,13 +366,12 @@ class SuspendableRateLimitedDispatcherTest {
             }
         }
 
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
+        @Test
         @Timeout(5, unit = TimeUnit.SECONDS)
-        fun `on shutdown slow tasks complete exceptionally`(dispatcherType: DispatcherType) {
+        fun `on shutdown slow tasks complete exceptionally`() {
 
             val expectedException: Throwable
-            createDispatcher(closingTimeout = 0, dispatcherType = dispatcherType).use { dispatcher ->
+            createDispatcher(closingTimeout = 0).use { dispatcher ->
 
                 for (i in 1..3) {
                     scope.launch {
@@ -433,10 +388,9 @@ class SuspendableRateLimitedDispatcherTest {
             expectedException.message!!.shouldContain("timeout while waiting for coroutines finishing")
         }
 
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
-        fun `task, submitted in closed dispatcher, is rejected with exception`(dispatcherType: DispatcherType) = runBlocking {
-            val dispatcher = createDispatcher(dispatcherType)
+        @Test
+        fun `task, submitted in closed dispatcher, is rejected with exception`() = runBlocking {
+            val dispatcher = createDispatcher()
             dispatcher.close()
 
             val t = shouldThrowExactly<RejectedExecutionException> {
@@ -451,10 +405,9 @@ class SuspendableRateLimitedDispatcherTest {
             return@runBlocking
         }
 
-        @ParameterizedTest
-        @EnumSource(DispatcherType::class)
-        fun `invoke suspend function`(dispatcherType: DispatcherType) {
-            createDispatcher(dispatcherType).use { dispatcher ->
+        @Test
+        fun `invoke suspend function`() {
+            createDispatcher().use { dispatcher ->
 
                 val suspendFunctionInvoked = AtomicBoolean(false)
 
@@ -475,8 +428,7 @@ class SuspendableRateLimitedDispatcherTest {
 
         private suspend fun `submit series of operations`(
             ratePerSecond: Int,
-            iterations: Int,
-            dispatcherType: DispatcherType
+            iterations: Int
         ): ProfilerReport {
 
             val profiler = AggregatingProfiler()
@@ -485,8 +437,7 @@ class SuspendableRateLimitedDispatcherTest {
 
             createDispatcher(
                 rateLimitRequestPerSecond = ratePerSecond,
-                profiler = profiler,
-                dispatcherType = dispatcherType
+                profiler = profiler
             ).use { dispatcher ->
 
                 val counter = AtomicInteger(0)
@@ -620,37 +571,18 @@ class SuspendableRateLimitedDispatcherTest {
     }
 
     private fun createDispatcher(
-            dispatcherType: DispatcherType,
             rateLimitRequestPerSecond: Int = 500,
             closingTimeout: Int = 5000,
             profiler: Profiler = NoopProfiler(),
             context: CoroutineContext = Dispatchers.IO
-    ): SuspendableRateLimitedDispatcher {
-        return when(dispatcherType) {
-            DispatcherType.SIMPLE -> SuspendableRateLimitedDispatcher(
-                DISPATCHER_NAME,
-                ConfigurableRateLimiterKt("rate-limiter-name", rateLimitRequestPerSecond),
-                profiler,
-                DynamicProperty.of(closingTimeout.toLong()),
-                context
+    ) =
+            SuspendableRateLimitedDispatcher(
+                    DISPATCHER_NAME,
+                    ConfigurableRateLimiterKt("rate-limiter-name", rateLimitRequestPerSecond),
+                    profiler,
+                    DynamicProperty.of(closingTimeout.toLong()),
+                    context
             )
-            DispatcherType.PROVIDER -> {
-                RateLimitedDispatcherProviderImpl(
-                    rateLimiterFactory = RateLimiterTestFactory(),
-                    rateLimiterSettings = DynamicProperty.of(
-                        RateLimiterSettings(
-                            limitPerSec = rateLimitRequestPerSecond.toDouble(),
-                            closeTimeout = Duration.ofSeconds(closingTimeout.toLong()),
-                            isSuspendable = true
-                        )
-                    ),
-                    profiler = profiler,
-                    suspendableWaitingScopeContext = context,
-                    limiterId = DISPATCHER_NAME
-                ).provideDispatcher() as SuspendableRateLimitedDispatcher
-            }
-        }
-    }
 
     private fun ProfilerReport.getMetric(metric: String): Long {
         return indicators.mapKeys { it.key.name }["$DISPATCHER_METRICS_PREFIX.$metric"]!!
@@ -671,11 +603,10 @@ class SuspendableRateLimitedDispatcherTest {
     }
 
     inner class TrackableDispatcherWithCF(
-            profiler: Profiler = NoopProfiler(),
-            dispatcherType: DispatcherType
+            profiler: Profiler = NoopProfiler()
     ) : TrackableDispatcher {
 
-        private val dispatcher = createDispatcher(profiler = profiler, dispatcherType = dispatcherType)
+        private val dispatcher = createDispatcher(profiler = profiler)
         private val isSubmittedTaskInvoked = HashMap<Int, AtomicBoolean>()
         private val isSubmittedTaskFinished = HashMap<Int, AtomicBoolean>()
 
@@ -727,11 +658,10 @@ class SuspendableRateLimitedDispatcherTest {
     }
 
     inner class TrackableDispatcherWithSuspend(
-            profiler: Profiler = NoopProfiler(),
-            dispatcherType: DispatcherType
+            profiler: Profiler = NoopProfiler()
     ) : TrackableDispatcher {
 
-        private val dispatcher = createDispatcher(profiler = profiler, dispatcherType = dispatcherType)
+        private val dispatcher = createDispatcher(profiler = profiler)
         private val isSubmittedTaskInvoked = HashMap<Int, AtomicBoolean>()
         private val isSubmittedTaskFinished = HashMap<Int, AtomicBoolean>()
 
