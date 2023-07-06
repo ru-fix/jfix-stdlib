@@ -27,22 +27,34 @@ class RateLimitedDispatcherProviderImpl(
     init {
         rateLimiterSettings.map { it.isSuspendable }
             .createSubscription()
-            .setAndCallListener { oldValue, newValue ->
-                updateDispatcher(newValue ?: oldValue)
+            .setAndCallListener { _, newValue ->
+                updateDispatcher(newValue)
             }
     }
 
     override fun provideDispatcher(): RateLimitedDispatcherInterface =
-        if (useSuspendable.get()) rateLimitedDispatcherSuspendable.value else rateLimitedDispatcher.value
+        if (useSuspendable.get()) {
+            rateLimitedDispatcherSuspendable.value
+        } else {
+            rateLimitedDispatcher.value
+        }
 
 
     override fun close() {
-        if (rateLimitedDispatcher.isInitialized()) rateLimitedDispatcher.value.close()
-        if (rateLimitedDispatcherSuspendable.isInitialized()) rateLimitedDispatcherSuspendable.value.close()
+        if (rateLimitedDispatcher.isInitialized()) {
+            rateLimitedDispatcher.value.close()
+        }
+        if (rateLimitedDispatcherSuspendable.isInitialized()) {
+            rateLimitedDispatcherSuspendable.value.close()
+        }
     }
 
     private fun updateDispatcher(newValue: Boolean) {
-        if (newValue) rateLimitedDispatcherSuspendable.value else rateLimitedDispatcher.value
+        if (newValue) {
+            rateLimitedDispatcherSuspendable.value
+        } else {
+            rateLimitedDispatcher.value
+        }
         useSuspendable.set(newValue)
     }
 

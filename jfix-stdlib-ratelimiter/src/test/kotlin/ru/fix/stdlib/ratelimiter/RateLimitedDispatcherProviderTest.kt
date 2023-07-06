@@ -5,6 +5,7 @@ import kotlinx.coroutines.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import ru.fix.aggregating.profiler.*
+import ru.fix.dynamic.property.api.AtomicProperty
 import ru.fix.dynamic.property.api.DynamicProperty
 import java.lang.Thread.*
 import java.time.Duration
@@ -15,41 +16,32 @@ class RateLimitedDispatcherProviderTest {
 
     @Test
     fun `WHEN swithcing isSuspendableFlag THEN provider switches dispatcher realisation`() {
-        val rateLimitedDispatcherProvider = createDispatcherProvider()
+        val settings: AtomicProperty<RateLimiterSettings> = AtomicProperty(createRateLimiterSettings(true))
+        val rateLimitedDispatcherProvider = createDispatcherProvider(settings)
+
         rateLimitedDispatcherProvider.provideDispatcher().shouldBeInstanceOf<SuspendableRateLimitedDispatcher>()
-        rateLimitedDispatcherProvider.switchDispatcherProvider(false)
+        settings.set(createRateLimiterSettings(false))
         rateLimitedDispatcherProvider.provideDispatcher().shouldBeInstanceOf<RateLimitedDispatcher>()
-        rateLimitedDispatcherProvider.switchDispatcherProvider(true)
+        settings.set(createRateLimiterSettings(true))
         rateLimitedDispatcherProvider.provideDispatcher().shouldBeInstanceOf<SuspendableRateLimitedDispatcher>()
     }
 
-    private fun createDispatcherProvider(): RateLimitedDispatcherProvider {
+    private fun createRateLimiterSettings(isSuspendable: Boolean) =
+        RateLimiterSettings(
+            limitPerSec = 500.0,
+            closeTimeout = Duration.ofSeconds(5000),
+            isSuspendable = isSuspendable
+        )
+
+    private fun createDispatcherProvider(settings: DynamicProperty<RateLimiterSettings>): RateLimitedDispatcherProvider {
         return RateLimitedDispatcherProviderImpl(
             rateLimiterFactory = RateLimiterTestFactory(),
-            rateLimiterSettings = DynamicProperty.of(
-                RateLimiterSettings(
-                    limitPerSec = 500.0,
-                    closeTimeout = Duration.ofSeconds(5000),
-                    isSuspendable = true
-                )
-            ),
+            rateLimiterSettings = settings,
             profiler = NoopProfiler(),
             suspendableWaitingScopeContext = Dispatchers.Default,
             limiterId = "dispatcher-name",
             window = DynamicProperty.of(0)
         )
-    }
-
-    /**
-     * Change provider's dispatcher flag
-     */
-    private fun RateLimitedDispatcherProvider.switchDispatcherProvider(isSuspendable: Boolean) {
-        this::class.java.declaredMethods
-            .find {
-                it.name == "updateDispatcher"
-            }!!
-            .apply { isAccessible = true }
-            .invoke(this, isSuspendable)
     }
 
 }
