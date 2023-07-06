@@ -123,27 +123,27 @@ class RateLimitedDispatcherTest {
     }
 
     private fun `async operations are restricted by limiter limit `(windowSize: Int) {
-        val RATE_PER_SECOND = 500
-        val ITERATIONS = 5 * RATE_PER_SECOND
+        val ratePerSecond = 500
+        val iterations = 5 * ratePerSecond
 
         val report = `submit series of operations`(
-                ratePerSecond = RATE_PER_SECOND,
-                interations = ITERATIONS,
+                ratePerSecond = ratePerSecond,
+                iterations = iterations,
                 windowSize = DynamicProperty.of(windowSize))
 
         val operationReport = report.profilerCallReports.single { it.identity.name == "operation" }
 
         logger.info("Throughput $operationReport")
         operationReport.stopThroughputAvg.shouldBeBetween(
-                RATE_PER_SECOND.toDouble(),
-                RATE_PER_SECOND.toDouble(),
-                RATE_PER_SECOND.toDouble() * 0.25)
+                ratePerSecond.toDouble(),
+                ratePerSecond.toDouble(),
+                ratePerSecond.toDouble() * 0.25)
     }
 
     private fun `submit series of operations`(
-            ratePerSecond: Int,
-            interations: Int,
-            windowSize: DynamicProperty<Int>): ProfilerReport {
+        ratePerSecond: Int,
+        iterations: Int,
+        windowSize: DynamicProperty<Int>): ProfilerReport {
 
 
         val profiler = AggregatingProfiler()
@@ -160,7 +160,7 @@ class RateLimitedDispatcherTest {
         val profilerReporter = profiler.createReporter()
         val profiledCall = profiler.profiledCall("operation")
 
-        val features = List(interations) {
+        val features = List(iterations) {
             dispatcher.compose {
                 profiledCall.profile<CompletableFuture<Int>> {
                     completedFuture(counter.incrementAndGet())
@@ -168,11 +168,11 @@ class RateLimitedDispatcherTest {
             }
         }
 
-        logger.info("Submit $interations operations.")
+        logger.info("Submit $iterations operations.")
         features.forEach { it.join() }
 
-        counter.get().shouldBe(interations)
-        features.map { it.join() }.toSet().containsAll((1..interations).toList())
+        counter.get().shouldBe(iterations)
+        features.map { it.join() }.toSet().containsAll((1..iterations).toList())
 
         val report = profilerReporter.buildReportAndReset()
         dispatcher.close()
@@ -204,25 +204,25 @@ class RateLimitedDispatcherTest {
     @Test
     fun `'queue_wait', 'acquire_limit', 'acquire_window', 'supplied_operation', 'queue_size', 'active_async_operations' metrics gathered during execution`() {
 
-        val RATE_PER_SECOND = 500
-        val ITERATIONS = 5 * RATE_PER_SECOND
+        val ratePerSecond = 500
+        val iterations = 5 * ratePerSecond
 
         val report = `submit series of operations`(
-                ratePerSecond = RATE_PER_SECOND,
-                interations = ITERATIONS,
+                ratePerSecond = ratePerSecond,
+                iterations = iterations,
                 windowSize = DynamicProperty.of(100))
 
         report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.queue_wait" }
-                .stopSum.shouldBe(ITERATIONS)
+                .stopSum.shouldBe(iterations)
 
         report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.acquire_window" }
-                .stopSum.shouldBe(ITERATIONS)
+                .stopSum.shouldBe(iterations)
 
         report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.acquire_limit" }
-                .stopSum.shouldBe(ITERATIONS)
+                .stopSum.shouldBe(iterations)
 
         report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.supply_operation" }
-                .stopSum.shouldBe(ITERATIONS)
+                .stopSum.shouldBe(iterations)
 
         report.indicators.map { it.key.name }.shouldContain("$DISPATCHER_METRICS_PREFIX.queue_size")
 
@@ -474,9 +474,9 @@ class RateLimitedDispatcherTest {
     ) {
 
         val windowProperty = AtomicProperty(0)
-        val dispatcher = createDispatcher(profiler = profiler, window = windowProperty)
-        val submittedTasksResults = HashMap<Int, CompletableFuture<Any?>>()
-        val isSubmittedTaskInvoked = HashMap<Int, AtomicBoolean>()
+        private val dispatcher = createDispatcher(profiler = profiler, window = windowProperty)
+        private val submittedTasksResults = HashMap<Int, CompletableFuture<Any?>>()
+        private val isSubmittedTaskInvoked = HashMap<Int, AtomicBoolean>()
 
         fun submitCompletedTasks(tasks: IntRange) {
             for (task in tasks) {
@@ -490,9 +490,9 @@ class RateLimitedDispatcherTest {
             }
         }
 
-        fun submitCompletedTask(taskIndex: Int) = submitTask(taskIndex, completedFuture(taskIndex))
-
         fun submitTask(taskIndex: Int) = submitTask(taskIndex, CompletableFuture())
+
+        private fun submitCompletedTask(taskIndex: Int) = submitTask(taskIndex, completedFuture(taskIndex))
 
         private fun submitTask(taskIndex: Int, future: CompletableFuture<Any?>) {
             submittedTasksResults[taskIndex] = future
