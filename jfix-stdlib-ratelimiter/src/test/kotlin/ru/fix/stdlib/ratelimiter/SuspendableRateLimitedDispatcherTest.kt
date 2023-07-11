@@ -66,7 +66,7 @@ class SuspendableRateLimitedDispatcherTest {
     val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 
     @Nested
-    inner class CompletableFutureTest {
+    inner class CompletableFutureTests {
         @Test
         fun `dispatch async operation with exceptional CompletableFuture, operation invoked and it's result returned`() {
             createDispatcher().use { dispatcher ->
@@ -291,39 +291,39 @@ class SuspendableRateLimitedDispatcherTest {
 
         @Test
         fun `series of operations`() = runBlocking {
-            val RATE_PER_SECOND = 500
-            val ITERATIONS = 5 * RATE_PER_SECOND
+            val ratePerSecond = 500
+            val iterations = 5 * ratePerSecond
 
             val report = `submit series of operations`(
-                ratePerSecond = RATE_PER_SECOND,
-                iterations = ITERATIONS
+                ratePerSecond = ratePerSecond,
+                iterations = iterations
             )
 
             val operationReport = report.profilerCallReports.single { it.identity.name == "operation" }
 
             logger.info("Throughput $operationReport")
             operationReport.stopThroughputAvg.shouldBeBetween(
-                RATE_PER_SECOND.toDouble(),
-                RATE_PER_SECOND.toDouble(),
-                RATE_PER_SECOND.toDouble() * 0.25)
+                ratePerSecond.toDouble(),
+                ratePerSecond.toDouble(),
+                ratePerSecond.toDouble() * 0.25)
         }
 
         @Test
         fun `'acquire_limit', 'supply_operation', 'active_async_operations' metrics gathered during execution`() = runBlocking {
 
-            val RATE_PER_SECOND = 500
-            val ITERATIONS = 5 * RATE_PER_SECOND
+            val ratePerSecond = 500
+            val iterations = 5 * ratePerSecond
 
             val report = `submit series of operations`(
-                ratePerSecond = RATE_PER_SECOND,
-                iterations = ITERATIONS
+                ratePerSecond = ratePerSecond,
+                iterations = iterations
             )
 
             report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.acquire_limit" }
-                .stopSum.shouldBe(ITERATIONS)
+                .stopSum.shouldBe(iterations)
 
             report.profilerCallReports.single { it.identity.name == "$DISPATCHER_METRICS_PREFIX.supply_operation" }
-                .stopSum.shouldBe(ITERATIONS)
+                .stopSum.shouldBe(iterations)
 
             report.indicators.map { it.key.name }.shouldContain("$DISPATCHER_METRICS_PREFIX.active_async_operations")
 

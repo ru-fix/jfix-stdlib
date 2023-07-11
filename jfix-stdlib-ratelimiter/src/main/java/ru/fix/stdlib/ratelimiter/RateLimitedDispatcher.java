@@ -1,5 +1,6 @@
 package ru.fix.stdlib.ratelimiter;
 
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.fix.aggregating.profiler.NoopProfiler;
@@ -11,11 +12,7 @@ import ru.fix.dynamic.property.api.PropertySubscription;
 
 import java.lang.invoke.MethodHandles;
 import java.time.temporal.ChronoUnit;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -27,7 +24,7 @@ import java.util.function.Supplier;
  * When Window or Rate restriction is reached, dispatcher will stop to process requests and enqueue them in umbound queue.
  * Disaptcher executes all operations in single dedicated thread.
  */
-public class RateLimitedDispatcher implements AutoCloseable {
+public class RateLimitedDispatcher implements RateLimitedDispatcherInterface {
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
     private static final String QUEUE_SIZE_INDICATOR = "queue_size";
@@ -114,7 +111,9 @@ public class RateLimitedDispatcher implements AutoCloseable {
         taskQueue.add(new AwakeFromWaitingQueueTask());
     }
 
-    public <T> CompletableFuture<T> compose(Supplier<CompletableFuture<T>> supplier) {
+    @NotNull
+    @Override
+    public <T> CompletableFuture<T> compose(@NotNull Supplier<CompletableFuture<T>> supplier) {
         return submit(
                 () -> supplier.get()
                         .whenComplete((t, throwable) -> asyncOperationCompleted())

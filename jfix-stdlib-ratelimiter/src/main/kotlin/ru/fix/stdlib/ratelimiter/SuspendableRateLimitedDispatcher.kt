@@ -16,6 +16,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import java.util.function.Supplier
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -37,7 +38,7 @@ class SuspendableRateLimitedDispatcher(
         profiler: Profiler,
         closingTimeout: DynamicProperty<Long>,
         context: CoroutineContext
-) : AutoCloseable {
+) : RateLimitedDispatcherInterface {
 
     companion object {
         private const val ACTIVE_ASYNC_OPERATIONS = "active_async_operations"
@@ -75,7 +76,7 @@ class SuspendableRateLimitedDispatcher(
         activeAsyncOperations.decrementAndGet()
     }
 
-    suspend fun <T> decorateSuspend(supplier: suspend () -> T): T {
+    override suspend fun <T> decorateSuspend(supplier: suspend () -> T): T {
         return submit {
             val res = supplier.invoke()
             asyncOperationCompleted()
@@ -83,10 +84,10 @@ class SuspendableRateLimitedDispatcher(
         }.await()
     }
 
-    fun <T> compose(supplier: () -> CompletableFuture<T>): CompletableFuture<T> {
+    override fun <T> compose(supplier: Supplier<CompletableFuture<T>>): CompletableFuture<T> {
         return GlobalScope.future(Dispatchers.Unconfined) {
             decorateSuspend {
-                supplier.invoke().await()
+                supplier.get().await()
             }
         }
     }
@@ -114,7 +115,7 @@ class SuspendableRateLimitedDispatcher(
         }
     }
 
-    fun updateRate(rate: Int) {
+    override fun updateRate(rate: Int) {
         rateLimiter.updateRate(rate)
     }
 
